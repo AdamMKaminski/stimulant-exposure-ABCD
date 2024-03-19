@@ -1,0 +1,1610 @@
+---
+title: "Stimulant project"
+author: "Adam Kaminski"
+date: "2023-05-12"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(knitr)
+require(gt)
+```
+
+## <br>
+## Analysis
+
+#### STEP 1: Bayesian analysis predicting stimulant exposure group
+##### Simple models, 1 model per striatal seed (6 total)
+##### Data in wide format
+```{r,warning=FALSE,eval=FALSE}
+# bayesian analysis -- simple models
+require(brms)
+require(bayesplot)
+require(ggplot2)
+
+#
+# For stim vs. no stim use netdat1_gm
+# For other vs. nothing use netdat1_gm_nostim
+
+# length of good data for gm dfs are sqrt of length of good data
+netdat1_gm$FD.under.0.2.0 <- sqrt(netdat1_gm$FD.under.0.2.0)
+netdat1_gm$FD.under.0.2.2 <- sqrt(netdat1_gm$FD.under.0.2.2)
+netdat2_gm$FD.under.0.2.0 <- sqrt(netdat2_gm$FD.under.0.2.0)
+netdat2_gm$FD.under.0.2.2 <- sqrt(netdat2_gm$FD.under.0.2.2)
+netdat3_gm$FD.under.0.2.0 <- sqrt(netdat3_gm$FD.under.0.2.0)
+netdat3_gm$FD.under.0.2.2 <- sqrt(netdat3_gm$FD.under.0.2.2)
+
+if (sum(as.numeric(netdat1_gm$src_subject_id==scatter_df_cont$ID))==dim(netdat1_gm)[1]) {
+  netdat1_gm$comorbs <- scatter_df_cont$comorbs
+}
+
+# Add IQ covariates to main df (netdat1_gm)
+if (sum(as.integer(netdat1_gm$src_subject_id==demos_gm$src_subject_id))==dim(netdat1_gm)[1]){
+  netdat1_gm$nihtbx_picvocab_agecorrected.0 <- demos_gm$nihtbx_picvocab_agecorrected.0
+  netdat1_gm$nihtbx_picvocab_agecorrected.2 <- demos_gm$nihtbx_picvocab_agecorrected.2
+}
+
+# Add sqrt of good data length
+netdat1_gm$FD.under.0.2.0_sqrt <- sqrt(netdat1_gm$FD.under.0.2.0)
+netdat1_gm$FD.under.0.2.2_sqrt <- sqrt(netdat1_gm$FD.under.0.2.2)
+
+netdat1_gm_nostim <- netdat1_gm[netdat1_gm$stim_group_bi=="0",]
+
+#
+# mod 1
+#
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex),
+  #prior(normal(0,10), class=b, coef=stim_group_bi1),
+  #prior(normal(0,10), class=b, coef=nonstim_med_bi),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=au_cdelh),
+  prior(normal(0,10), class=b, coef=cercsa_cdelh),
+  prior(normal(0,10), class=b, coef=copa_cdelh),
+  prior(normal(0,10), class=b, coef=df_cdelh),
+  prior(normal(0,10), class=b, coef=dsa_cdelh),
+  prior(normal(0,10), class=b, coef=fopa_cdelh),
+  prior(normal(0,10), class=b, coef=rst_cdelh),
+  prior(normal(0,10), class=b, coef=smhsmm_cdelh),
+  prior(normal(0,10), class=b, coef=vta_cdelh),
+  prior(normal(0,10), class=b, coef=vs_cdelh)
+  )
+
+mod1_cdelh_gm_7_nostim<-brm(as.numeric(nonstim_med_bi) ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           #nonstim_med_bi + 
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs +
+           au_cdelh + cercsa_cdelh + copa_cdelh + df_cdelh + dsa_cdelh +
+           fopa_cdelh + rst_cdelh + smhsmm_cdelh + vta_cdelh + vs_cdelh +
+           (1|site.0),
+         data=netdat1_gm_nostim, family="bernoulli",           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+color_scheme_set("red")
+mcmc_areas(
+  mod1_cdelh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_cdelh"),
+      as.character("b_cercsa_cdelh"),
+      as.character("b_copa_cdelh"),
+      as.character("b_df_cdelh"),
+      as.character("b_dsa_cdelh"),
+      as.character("b_fopa_cdelh"),
+      as.character("b_rst_cdelh"),
+      as.character("b_smhsmm_cdelh"),
+      as.character("b_vta_cdelh"),
+      as.character("b_vs_cdelh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Left Caudate") + vline_0()
+
+#
+# mod 2
+#
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex),
+  #prior(normal(0,10), class=b, coef=stim_group_bi1),
+  #prior(normal(0,10), class=b, coef=nonstim_med_bi),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=au_ptlh),
+  prior(normal(0,10), class=b, coef=cercsa_ptlh),
+  prior(normal(0,10), class=b, coef=copa_ptlh),
+  prior(normal(0,10), class=b, coef=df_ptlh),
+  prior(normal(0,10), class=b, coef=dsa_ptlh),
+  prior(normal(0,10), class=b, coef=fopa_ptlh),
+  prior(normal(0,10), class=b, coef=rst_ptlh),
+  prior(normal(0,10), class=b, coef=smhsmm_ptlh),
+  prior(normal(0,10), class=b, coef=vta_ptlh),
+  prior(normal(0,10), class=b, coef=vs_ptlh)
+  )
+
+mod1_ptlh_gm_7_nostim<-brm(as.numeric(nonstim_med_bi) ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           #nonstim_med_bi + 
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs +
+           au_ptlh + cercsa_ptlh + copa_ptlh + df_ptlh + dsa_ptlh +
+           fopa_ptlh + rst_ptlh + smhsmm_ptlh + vta_ptlh + vs_ptlh +
+           (1|site.0),
+         data=netdat1_gm_nostim, family="bernoulli",           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+
+color_scheme_set("green")
+mcmc_areas(
+  mod1_ptlh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_ptlh"),
+      as.character("b_cercsa_ptlh"),
+      as.character("b_copa_ptlh"),
+      as.character("b_df_ptlh"),
+      as.character("b_dsa_ptlh"),
+      as.character("b_fopa_ptlh"),
+      as.character("b_rst_ptlh"),
+      as.character("b_smhsmm_ptlh"),
+      as.character("b_vta_ptlh"),
+      as.character("b_vs_ptlh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Left Putamen") + vline_0()
+
+#
+# mod 3
+#
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex),
+  #prior(normal(0,10), class=b, coef=stim_group_bi1),
+  #prior(normal(0,10), class=b, coef=nonstim_med_bi),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=au_aalh),
+  prior(normal(0,10), class=b, coef=cercsa_aalh),
+  prior(normal(0,10), class=b, coef=copa_aalh),
+  prior(normal(0,10), class=b, coef=df_aalh),
+  prior(normal(0,10), class=b, coef=dsa_aalh),
+  prior(normal(0,10), class=b, coef=fopa_aalh),
+  prior(normal(0,10), class=b, coef=rst_aalh),
+  prior(normal(0,10), class=b, coef=smhsmm_aalh),
+  prior(normal(0,10), class=b, coef=vta_aalh),
+  prior(normal(0,10), class=b, coef=vs_aalh)
+  )
+
+mod1_aalh_gm_7_nostim<-brm(as.numeric(nonstim_med_bi) ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           #nonstim_med_bi + 
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs +
+           au_aalh + cercsa_aalh + copa_aalh + df_aalh + dsa_aalh +
+           fopa_aalh + rst_aalh + smhsmm_aalh + vta_aalh + vs_aalh +
+           (1|site.0),
+         data=netdat1_gm_nostim, family="bernoulli",           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+color_scheme_set("yellow")
+mcmc_areas(
+  mod1_aalh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_aalh"),
+      as.character("b_cercsa_aalh"),
+      as.character("b_copa_aalh"),
+      as.character("b_df_aalh"),
+      as.character("b_dsa_aalh"),
+      as.character("b_fopa_aalh"),
+      as.character("b_rst_aalh"),
+      as.character("b_smhsmm_aalh"),
+      as.character("b_vta_aalh"),
+      as.character("b_vs_aalh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Left Nucleus Accumbens") + vline_0()
+
+#
+# mod 4
+#
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex),
+  #prior(normal(0,10), class=b, coef=stim_group_bi1),
+  #prior(normal(0,10), class=b, coef=nonstim_med_bi),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=au_cderh),
+  prior(normal(0,10), class=b, coef=cercsa_cderh),
+  prior(normal(0,10), class=b, coef=copa_cderh),
+  prior(normal(0,10), class=b, coef=df_cderh),
+  prior(normal(0,10), class=b, coef=dsa_cderh),
+  prior(normal(0,10), class=b, coef=fopa_cderh),
+  prior(normal(0,10), class=b, coef=rst_cderh),
+  prior(normal(0,10), class=b, coef=smhsmm_cderh),
+  prior(normal(0,10), class=b, coef=vta_cderh),
+  prior(normal(0,10), class=b, coef=vs_cderh)
+  )
+
+mod1_cderh_gm_7_nostim<-brm(as.numeric(nonstim_med_bi) ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           #nonstim_med_bi + 
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs +
+           au_cderh + cercsa_cderh + copa_cderh + df_cderh + dsa_cderh +
+           fopa_cderh + rst_cderh + smhsmm_cderh + vta_cderh + vs_cderh +
+           (1|site.0),
+         data=netdat1_gm_nostim, family="bernoulli",           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+color_scheme_set("brightblue")
+mcmc_areas(
+  mod1_cderh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_cderh"),
+      as.character("b_cercsa_cderh"),
+      as.character("b_copa_cderh"),
+      as.character("b_df_cderh"),
+      as.character("b_dsa_cderh"),
+      as.character("b_fopa_cderh"),
+      as.character("b_rst_cderh"),
+      as.character("b_smhsmm_cderh"),
+      as.character("b_vta_cderh"),
+      as.character("b_vs_cderh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Right Caudate") + vline_0()
+
+#
+# mod 5
+#
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex),
+  #prior(normal(0,10), class=b, coef=stim_group_bi1),
+  #prior(normal(0,10), class=b, coef=nonstim_med_bi),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=au_ptrh),
+  prior(normal(0,10), class=b, coef=cercsa_ptrh),
+  prior(normal(0,10), class=b, coef=copa_ptrh),
+  prior(normal(0,10), class=b, coef=df_ptrh),
+  prior(normal(0,10), class=b, coef=dsa_ptrh),
+  prior(normal(0,10), class=b, coef=fopa_ptrh),
+  prior(normal(0,10), class=b, coef=rst_ptrh),
+  prior(normal(0,10), class=b, coef=smhsmm_ptrh),
+  prior(normal(0,10), class=b, coef=vta_ptrh),
+  prior(normal(0,10), class=b, coef=vs_ptrh)
+  )
+
+mod1_ptrh_gm_7_nostim<-brm(as.numeric(nonstim_med_bi) ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           #nonstim_med_bi + 
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs +
+           au_ptrh + cercsa_ptrh + copa_ptrh + df_ptrh + dsa_ptrh +
+           fopa_ptrh + rst_ptrh + smhsmm_ptrh + vta_ptrh + vs_ptrh +
+           (1|site.0),
+         data=netdat1_gm_nostim, family="bernoulli",           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+color_scheme_set("pink")
+mcmc_areas(
+  mod1_ptrh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_ptrh"),
+      as.character("b_cercsa_ptrh"),
+      as.character("b_copa_ptrh"),
+      as.character("b_df_ptrh"),
+      as.character("b_dsa_ptrh"),
+      as.character("b_fopa_ptrh"),
+      as.character("b_rst_ptrh"),
+      as.character("b_smhsmm_ptrh"),
+      as.character("b_vta_ptrh"),
+      as.character("b_vs_ptrh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Right Putamen") + vline_0()
+
+#
+# mod 6
+#
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex),
+  #prior(normal(0,10), class=b, coef=stim_group_bi1),
+  #prior(normal(0,10), class=b, coef=nonstim_med_bi),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=au_aarh),
+  prior(normal(0,10), class=b, coef=cercsa_aarh),
+  prior(normal(0,10), class=b, coef=copa_aarh),
+  prior(normal(0,10), class=b, coef=df_aarh),
+  prior(normal(0,10), class=b, coef=dsa_aarh),
+  prior(normal(0,10), class=b, coef=fopa_aarh),
+  prior(normal(0,10), class=b, coef=rst_aarh),
+  prior(normal(0,10), class=b, coef=smhsmm_aarh),
+  prior(normal(0,10), class=b, coef=vta_aarh),
+  prior(normal(0,10), class=b, coef=vs_aarh)
+  )
+
+mod1_aarh_gm_7_nostim<-brm(as.numeric(nonstim_med_bi) ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           #nonstim_med_bi + 
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs +
+           au_aarh + cercsa_aarh + copa_aarh + df_aarh + dsa_aarh +
+           fopa_aarh + rst_aarh + smhsmm_aarh + vta_aarh + vs_aarh +
+           (1|site.0),
+         data=netdat1_gm_nostim, family="bernoulli",           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+color_scheme_set("blue")
+mcmc_areas(
+  mod1_aarh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_aarh"),
+      as.character("b_cercsa_aarh"),
+      as.character("b_copa_aarh"),
+      as.character("b_df_aarh"),
+      as.character("b_dsa_aarh"),
+      as.character("b_fopa_aarh"),
+      as.character("b_rst_aarh"),
+      as.character("b_smhsmm_aarh"),
+      as.character("b_vta_aarh"),
+      as.character("b_vs_aarh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Right Nucleus Accumbens") + vline_0()
+
+```
+
+#### "plot_RandEffPosteriors" function
+```{r,warning=FALSE}
+
+plot_RandEffPosteriors <- function(themod,range,titl) {
+
+temp <- posterior_summary(themod,prob=c(0.0125, .025, .05, .95, .975, 0.9875))
+temp2 <- as.data.frame(temp)
+
+# For 10 nets: temp3 <-as.data.frame(temp2[45:104,])
+temp3 <-as.data.frame(temp2[range,])
+temp4 <- as.data.frame(t(temp3))
+temp3$fc <- colnames(temp4)
+
+#
+# FOR 10 NETWORKS:
+#
+
+temp3$network <- c("L caudate","L caudate","L caudate","L caudate","L caudate","L caudate","L caudate","L caudate","L caudate","L caudate",
+                   "L putamen","L putamen","L putamen","L putamen","L putamen","L putamen","L putamen","L putamen","L putamen","L putamen",
+                   "L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc",
+                   "R caudate","R caudate","R caudate","R caudate","R caudate","R caudate","R caudate","R caudate","R caudate","R caudate",
+                   "R putamen","R putamen","R putamen","R putamen","R putamen","R putamen","R putamen","R putamen","R putamen","R putamen",
+                   "R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc")
+#
+# needed: library(forcats)
+# needed: library(ggplot2)
+#
+a <- ifelse((temp3$fc=="r_network[SM,change_fc_R_putamen]" |
+               temp3$fc=="r_network[SM,change_fc_L_putamen]"), "red", "black")
+a <- ifelse((temp3$fc=="r_network:seed[SM_L_putamen,FC]" |
+               temp3$fc=="r_network:seed[SM_R_putamen,FC]"), "red", "black")
+require(ggplot2)
+require(forcats)
+ggplot(temp3,aes(x = as.factor(fc),
+                 y = Estimate,
+                 color = as.factor(network))) +
+  geom_point(position=position_dodge(width=0.5)) +
+  aes(x = fct_inorder(as.factor(fc))) +
+  geom_hline(yintercept = 0, linetype = 2, linewidth = I(0.2), color = I("black")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, color=a)) +
+  geom_errorbar(aes(x = as.factor(fc),
+                    ymin = Q1.25, 
+                    ymax = Q98.75),
+                width = .1,
+                position=position_dodge(width=0.5)) +
+  labs(color = "Seeds",
+       x="Networks",   # !CHANGETHIS!
+       y="Posterior Distributions for Group Effects") +
+  theme(legend.position = c(0.77, 0.97),
+        legend.direction = "horizontal") +
+  scale_color_discrete(breaks=c('L putamen', 'R putamen', 'L caudate', 'R caudate', 'L NAcc', 'R NAcc')) +
+  geom_point(shape='-', size=6, color = 'black', data = data.frame(x=temp3$fc,
+                                                                   y=temp3$Q2.5,
+                                                                   color=temp3$network), aes(x=x, y=y, color=color)) +
+  geom_point(shape='-', size=6, color = 'black', data = data.frame(x=temp3$fc,
+                                                                   y=temp3$Q97.5,
+                                                                   color=temp3$network), aes(x=x, y=y, color=color)) +
+  geom_point(shape='-', size=4, color = 'black', data = data.frame(x=temp3$fc,
+                                                                   y=temp3$Q5,
+                                                                   color=temp3$network), aes(x=x, y=y, color=color)) +
+  geom_point(shape='-', size=4, color = 'black', data = data.frame(x=temp3$fc,
+                                                                   y=temp3$Q95,
+                                                                   color=temp3$network), aes(x=x, y=y, color=color)) +
+  scale_x_discrete(labels=c("Auditory","Cingulo-op-salience","Cingulo-parietal","Default Mode","Dorsal   Attention","Fronto-parietal","Retrosplenial","Somatomotor","Ventral Attention","Visual",
+                          "Auditory","Cingulo-op-salience","Cingulo-parietal","Default Mode","Dorsal Attention","Fronto-parietal","Retrosplenial","Somatomotor","Ventral Attention","Visual",
+                          "Auditory","Cingulo-op-salience","Cingulo-parietal","Default Mode","Dorsal Attention","Fronto-parietal","Retrosplenial","Somatomotor","Ventral Attention","Visual",
+                          "Auditory","Cingulo-op-salience","Cingulo-parietal","Default Mode","Dorsal Attention","Fronto-parietal","Retrosplenial","Somatomotor","Ventral Attention","Visual",
+                          "Auditory","Cingulo-op-salience","Cingulo-parietal","Default Mode","Dorsal Attention","Fronto-parietal","Retrosplenial","Somatomotor","Ventral Attention","Visual",
+                          "Auditory","Cingulo-op-salience","Cingulo-parietal","Default Mode","Dorsal Attention","Fronto-parietal","Retrosplenial","Somatomotor","Ventral Attention","Visual"
+)) + 
+  ggtitle(titl)
+
+}
+
+```
+
+## STEP 1 results
+## <br>
+### Left Caudate
+```{r,warning=FALSE,message=FALSE}
+
+require(cowplot)
+require(bayesplot)
+
+color_scheme_set("red")
+mcmc_areas(
+  mod1_cdelh_gm_7,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_cdelh"),
+      as.character("b_cercsa_cdelh"),
+      as.character("b_copa_cdelh"),
+      as.character("b_df_cdelh"),
+      as.character("b_dsa_cdelh"),
+      as.character("b_fopa_cdelh"),
+      as.character("b_rst_cdelh"),
+      as.character("b_smhsmm_cdelh"),
+      as.character("b_vta_cdelh"),
+      as.character("b_vs_cdelh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Left Caudate\nDV: Stimulant Vs. No Stimulant") + vline_0() + theme_minimal_grid(12)
+
+color_scheme_set("red")
+mcmc_areas(
+  mod1_cdelh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_cdelh"),
+      as.character("b_cercsa_cdelh"),
+      as.character("b_copa_cdelh"),
+      as.character("b_df_cdelh"),
+      as.character("b_dsa_cdelh"),
+      as.character("b_fopa_cdelh"),
+      as.character("b_rst_cdelh"),
+      as.character("b_smhsmm_cdelh"),
+      as.character("b_vta_cdelh"),
+      as.character("b_vs_cdelh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Left Caudate\nDV: Other Medication Vs. Nothing") + vline_0() + theme_minimal_grid(12)
+
+```
+
+## <br>
+### Left Putamen
+```{r,warning=FALSE,message=FALSE}
+color_scheme_set("green")
+mcmc_areas(
+  mod1_ptlh_gm_7,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_ptlh"),
+      as.character("b_cercsa_ptlh"),
+      as.character("b_copa_ptlh"),
+      as.character("b_df_ptlh"),
+      as.character("b_dsa_ptlh"),
+      as.character("b_fopa_ptlh"),
+      as.character("b_rst_ptlh"),
+      as.character("b_smhsmm_ptlh"),
+      as.character("b_vta_ptlh"),
+      as.character("b_vs_ptlh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Left Putamen\nDV: Stimulant Vs. No Stimulant") + vline_0() + theme_minimal_grid(12)
+
+color_scheme_set("green")
+mcmc_areas(
+  mod1_ptlh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_ptlh"),
+      as.character("b_cercsa_ptlh"),
+      as.character("b_copa_ptlh"),
+      as.character("b_df_ptlh"),
+      as.character("b_dsa_ptlh"),
+      as.character("b_fopa_ptlh"),
+      as.character("b_rst_ptlh"),
+      as.character("b_smhsmm_ptlh"),
+      as.character("b_vta_ptlh"),
+      as.character("b_vs_ptlh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Left Putamen\nDV: Other Medication Vs. Nothing") + vline_0() + theme_minimal_grid(12)
+
+```
+
+## <br>
+### Left Nucleus Accumbens
+```{r,warning=FALSE,message=FALSE}
+color_scheme_set("yellow")
+mcmc_areas(
+  mod1_aalh_gm_7,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_aalh"),
+      as.character("b_cercsa_aalh"),
+      as.character("b_copa_aalh"),
+      as.character("b_df_aalh"),
+      as.character("b_dsa_aalh"),
+      as.character("b_fopa_aalh"),
+      as.character("b_rst_aalh"),
+      as.character("b_smhsmm_aalh"),
+      as.character("b_vta_aalh"),
+      as.character("b_vs_aalh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Left Nucleus Accumbens\nDV: Stimulant Vs. No Stimulant") + vline_0() + theme_minimal_grid(12)
+
+color_scheme_set("yellow")
+mcmc_areas(
+  mod1_aalh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_aalh"),
+      as.character("b_cercsa_aalh"),
+      as.character("b_copa_aalh"),
+      as.character("b_df_aalh"),
+      as.character("b_dsa_aalh"),
+      as.character("b_fopa_aalh"),
+      as.character("b_rst_aalh"),
+      as.character("b_smhsmm_aalh"),
+      as.character("b_vta_aalh"),
+      as.character("b_vs_aalh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Left Nucleus Accumbens\nDV: Other Medication Vs. Nothing") + vline_0() + theme_minimal_grid(12)
+
+```
+
+## <br>
+### Right Caudate
+```{r,warning=FALSE,message=FALSE}
+color_scheme_set("brightblue")
+mcmc_areas(
+  mod1_cderh_gm_7,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_cderh"),
+      as.character("b_cercsa_cderh"),
+      as.character("b_copa_cderh"),
+      as.character("b_df_cderh"),
+      as.character("b_dsa_cderh"),
+      as.character("b_fopa_cderh"),
+      as.character("b_rst_cderh"),
+      as.character("b_smhsmm_cderh"),
+      as.character("b_vta_cderh"),
+      as.character("b_vs_cderh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Right Caudate\nDV: Stimulant Vs. No Stimulant") + vline_0() + theme_minimal_grid(12)
+
+color_scheme_set("brightblue")
+mcmc_areas(
+  mod1_cderh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_cderh"),
+      as.character("b_cercsa_cderh"),
+      as.character("b_copa_cderh"),
+      as.character("b_df_cderh"),
+      as.character("b_dsa_cderh"),
+      as.character("b_fopa_cderh"),
+      as.character("b_rst_cderh"),
+      as.character("b_smhsmm_cderh"),
+      as.character("b_vta_cderh"),
+      as.character("b_vs_cderh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Right Caudate\nDV: Other Medication Vs. Nothing") + vline_0() + theme_minimal_grid(12)
+
+```
+
+## <br>
+### Right Putamen
+```{r,warning=FALSE,message=FALSE}
+color_scheme_set("pink")
+mcmc_areas(
+  mod1_ptrh_gm_7,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_ptrh"),
+      as.character("b_cercsa_ptrh"),
+      as.character("b_copa_ptrh"),
+      as.character("b_df_ptrh"),
+      as.character("b_dsa_ptrh"),
+      as.character("b_fopa_ptrh"),
+      as.character("b_rst_ptrh"),
+      as.character("b_smhsmm_ptrh"),
+      as.character("b_vta_ptrh"),
+      as.character("b_vs_ptrh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Right Putamen\nDV: Stimulant Vs. No Stimulant") + vline_0() + theme_minimal_grid(12)
+
+color_scheme_set("pink")
+mcmc_areas(
+  mod1_ptrh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_ptrh"),
+      as.character("b_cercsa_ptrh"),
+      as.character("b_copa_ptrh"),
+      as.character("b_df_ptrh"),
+      as.character("b_dsa_ptrh"),
+      as.character("b_fopa_ptrh"),
+      as.character("b_rst_ptrh"),
+      as.character("b_smhsmm_ptrh"),
+      as.character("b_vta_ptrh"),
+      as.character("b_vs_ptrh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Right Putamen\nDV: Other Medication Vs. Nothing") + vline_0() + theme_minimal_grid(12)
+
+```
+
+## <br>
+### Right Nucleus Accumbens
+```{r,warning=FALSE,message=FALSE}
+color_scheme_set("blue")
+mcmc_areas(
+  mod1_aarh_gm_7,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_aarh"),
+      as.character("b_cercsa_aarh"),
+      as.character("b_copa_aarh"),
+      as.character("b_df_aarh"),
+      as.character("b_dsa_aarh"),
+      as.character("b_fopa_aarh"),
+      as.character("b_rst_aarh"),
+      as.character("b_smhsmm_aarh"),
+      as.character("b_vta_aarh"),
+      as.character("b_vs_aarh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Right Nucleus Accumbens\nDV: Stimulant Vs. No Stimulant") + vline_0() + theme_minimal_grid(12)
+
+color_scheme_set("blue")
+mcmc_areas(
+  mod1_aarh_gm_7_nostim,
+  prob = 0.95,
+  prob_outer = 0.99,
+  point_est = c("mean"),
+  pars = c(
+      as.character("b_au_aarh"),
+      as.character("b_cercsa_aarh"),
+      as.character("b_copa_aarh"),
+      as.character("b_df_aarh"),
+      as.character("b_dsa_aarh"),
+      as.character("b_fopa_aarh"),
+      as.character("b_rst_aarh"),
+      as.character("b_smhsmm_aarh"),
+      as.character("b_vta_aarh"),
+      as.character("b_vs_aarh")
+           )) +
+  scale_y_discrete(labels = rev(c("AN","CON/SN","CPN","DMN",
+                              "DAN","FPN","RTN","SM","VAN","VN")),
+                   limits = rev) +
+  labs(title = "Right Nucleus Accumbens\nDV: Other Medication Vs. Nothing") + vline_0()  + theme_minimal_grid(12)
+
+```
+
+## <br>
+### Above results in tables
+```{r,warning=FALSE,message=FALSE}
+
+mod_list1 <- list(mod1_cdelh_gm_b,mod1_cderh_gm_b,mod1_ptlh_gm_b,mod1_ptrh_gm_b,mod1_aalh_gm_b,mod1_aarh_gm_b)
+#mod_list2 <- list(mod2_cdelh_gm,mod2_cderh_gm,mod2_ptlh_gm,mod2_ptrh_gm,mod2_aalh_gm,mod2_aarh_gm)
+mod_list3 <- list(mod3_cdelh_gm,mod3_cderh_gm,mod3_ptlh_gm,mod3_ptrh_gm,mod3_aalh_gm,mod3_aarh_gm)
+
+rows <- c("Left Caudate-AN","Left Caudate-CON/SN","Left Caudate-CPN","Left Caudate-DMN","Left Caudate-DAN","Left Caudate-FPN","Left Caudate-RTN","Left Caudate-SMN","Left Caudate-VAN","Left Caudate-VN","Right Caudate-AN","Right Caudate-CON/SN","Right Caudate-CPN","Right Caudate-DMN","Right Caudate-DAN","Right Caudate-FPN","Right Caudate-RTN","Right Caudate-SMN","Right Caudate-VAN","Right Caudate-VN","Left Putamen-AN","Left Putamen-CON/SN","Left Putamen-CPN","Left Putamen-DMN","Left Putamen-DAN","Left Putamen-FPN","Left Putamen-RTN","Left Putamen-SMN","Left Putamen-VAN","Left Putamen-VN","Right Putamen-AN","Right Putamen-CON/SN","Right Putamen-CPN","Right Putamen-DMN","Right Putamen-DAN","Right Putamen-FPN","Right Putamen-RTN","Right Putamen-SMN","Right Putamen-VAN","Right Putamen-VN","Left NAcc-AN","Left NAcc-CON/SN","Left NAcc-CPN","Left NAcc-DMN","Left NAcc-DAN","Left NAcc-FPN","Left NAcc-RTN","Left NAcc-SMN","Left NAcc-VAN","Left NAcc-VN","Right NAcc-AN","Right NAcc-CON/SN","Right NAcc-CPN","Right NAcc-DMN","Right NAcc-DAN","Right NAcc-FPN","Right NAcc-RTN","Right NAcc-SMN","Right NAcc-VAN","Right NAcc-VN")
+
+# Stim vs. no stim
+myTab <- as.data.frame(matrix(0,60,7))
+myTab_temp <- as.data.frame(matrix(0,60,7))
+s <- 1
+for (mod in mod_list1) {
+  temp <- fixef(mod, probs = c(.025,.975))
+  myTab[s:c(s+9),1:4] <- temp[10:19,]
+  #myTab[s:c(s+9),1:4] <- temp[8:17,]
+  for (i in s:c(s+9)) {
+    if ((myTab[i,3]>0 & myTab[i,4]>0)|(myTab[i,3]<0 & myTab[i,4]<0)) {
+      myTab[i,5] <- 1
+    }
+  }
+  temp <- fixef(mod, probs = c(.05,.95))
+  myTab_temp[s:c(s+9),1:4] <- temp[10:19,]
+  #myTab_temp[s:c(s+9),1:4] <- temp[9:18,]
+  for (i in s:c(s+9)) {
+    if ((myTab_temp[i,3]>0 & myTab_temp[i,4]>0)|(myTab_temp[i,3]<0 & myTab_temp[i,4]<0)) {
+      myTab[i,6] <- 1
+    }
+  }
+  rownames(myTab)[s:c(s+9)] <- rows[s:c(s+9)]
+  s <- s + 10
+}
+
+# Other med vs. nothing
+myTempTab <- matrix(0,60,7)
+s <- 1
+for (mod in mod_list3) {
+  temp <- fixef(mod, probs = c(.05,.95))
+  myTempTab[s:c(s+9),1:4] <- temp[9:18,]
+  for (i in s:c(s+9)) {
+    if ((myTempTab[i,3]>0 & myTempTab[i,4]>0)|(myTempTab[i,3]<0 & myTempTab[i,4]<0)) {
+      myTab[i,6] <- 1
+    }
+  }
+  s <- s + 10
+}
+
+colnames(myTab) <- c("Estimate","Est.Error","Q2.5","Q97.5","Evidence at 95% CI","Evidence at 90% CI","Effect of Other Med (Control)")
+
+require(gtExtras)
+gt(myTab[1:20,],
+   rownames_to_stub = TRUE) |>
+   tab_header(
+    title = 'Evidence for Caudate rs-FC Association with Stimulant Exposure') |> 
+  opt_stylize(style = 3, color = 'gray') |> 
+  #gt_highlight_rows(rows = c(2,6), font_weight = "normal", fill="green") |> 
+  #gt_highlight_rows(rows = c(5,11), font_weight = "normal", fill="yellow")
+  gt_highlight_rows(rows = c(2,6), font_weight = "normal", fill="green")
+
+gt(myTab[21:40,],
+   rownames_to_stub = TRUE) |>
+   tab_header(
+    title = 'Evidence for Putamen rs-FC Association with Stimulant Exposure') |> 
+  opt_stylize(style = 3, color = 'gray') |> 
+  #gt_highlight_rows(rows = c(3,6,8,9,20), font_weight = "normal", fill="green") |> 
+  #gt_highlight_rows(rows = c(4,10,13,14,15,18,19), font_weight = "normal", fill="yellow")
+  gt_highlight_rows(rows = c(3,6,8,20), font_weight = "normal", fill="green") |> 
+  gt_highlight_rows(rows = c(9,19), font_weight = "normal", fill="yellow")
+
+gt(myTab[41:60,],
+   rownames_to_stub = TRUE) |>
+   tab_header(
+    title = 'Evidence for NAcc rs-FC Association with Stimulant Exposure') |> 
+  opt_stylize(style = 3, color = 'gray') |> 
+  #gt_highlight_rows(rows = c(5,8,19,20), font_weight = "normal", fill="yellow")
+  gt_highlight_rows(rows = c(5), font_weight = "normal", fill="yellow")
+
+```
+
+## <br>
+### STEP 2 analysis: is FC change driven by stimulant exposed group (vs. naive)?
+#### Bayesian models predicting FC, time X stim group X connection iteraction
+```{r,warning=FALSE,message=FALSE}
+
+# Convert wide df to long df by connection
+
+library(tidyverse)
+
+colnames(netdat_lt)[86] <- "aaa_smh_smm_ptlh"
+
+netdat_lt$FD.under_sqrt <- sqrt(netdat_lt$FD.under)
+
+netdat_lt_lc_2 <- netdat_lt %>%
+  pivot_longer(cols = c(aaa_smh_smm_ptlh, cercsa_cdelh, rsfmri_cor_ngd_fopa_scs_cdelh,
+                        rsfmri_cor_ngd_copa_scs_ptlh, rsfmri_cor_ngd_fopa_scs_ptlh,
+                        rsfmri_cor_ngd_dsa_scs_aalh,
+                        rsfmri_cor_ngd_vta_scs_ptrh, rsfmri_cor_ngd_vs_scs_ptrh), 
+                names_to = "Connection", values_to = "rsFC")
+
+netdat_lt_lc_3 <- netdat_lt %>%
+  pivot_longer(cols = c(cercsa_cdelh, rsfmri_cor_ngd_fopa_scs_cdelh,
+                        rsfmri_cor_ngd_copa_scs_ptlh, rsfmri_cor_ngd_fopa_scs_ptlh,
+                        rsfmri_cor_ngd_dsa_scs_aalh,
+                        rsfmri_cor_ngd_vta_scs_ptrh, rsfmri_cor_ngd_vs_scs_ptrh), 
+                names_to = "Connection", values_to = "rsFC")
+
+
+slope.prior.all <- c(
+  # Covariates
+  prior(normal(0,10), class=b, coef=meanFD),
+  prior(normal(0,10), class=b, coef=FD.under_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex_bin),
+  prior(normal(0,10), class=b, coef=nonstim_med_bi),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected),
+  # Of interest
+  prior(normal(0,10), class=b, coef=stim_group_bi),
+  prior(normal(0,10), class=b, coef=stim_group_bi:Connectionrsfmri_cor_ngd_fopa_scs_cdelh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:Connectionrsfmri_cor_ngd_copa_scs_ptlh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:Connectionrsfmri_cor_ngd_fopa_scs_ptlh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:Connectionrsfmri_cor_ngd_dsa_scs_aalh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:Connectionrsfmri_cor_ngd_vs_scs_ptrh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:Connectionrsfmri_cor_ngd_vta_scs_ptrh),
+  prior(normal(0,10), class=b, coef=time),
+  prior(normal(0,10), class=b, coef=time:Connectionrsfmri_cor_ngd_fopa_scs_cdelh),
+  prior(normal(0,10), class=b, coef=time:Connectionrsfmri_cor_ngd_copa_scs_ptlh),
+  prior(normal(0,10), class=b, coef=time:Connectionrsfmri_cor_ngd_fopa_scs_ptlh),
+  prior(normal(0,10), class=b, coef=time:Connectionrsfmri_cor_ngd_dsa_scs_aalh),
+  prior(normal(0,10), class=b, coef=time:Connectionrsfmri_cor_ngd_vs_scs_ptrh),
+  prior(normal(0,10), class=b, coef=time:Connectionrsfmri_cor_ngd_vta_scs_ptrh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:time),
+  prior(normal(0,10), class=b, coef=stim_group_bi:time:Connectionrsfmri_cor_ngd_fopa_scs_cdelh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:time:Connectionrsfmri_cor_ngd_copa_scs_ptlh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:time:Connectionrsfmri_cor_ngd_fopa_scs_ptlh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:time:Connectionrsfmri_cor_ngd_dsa_scs_aalh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:time:Connectionrsfmri_cor_ngd_vs_scs_ptrh),
+  prior(normal(0,10), class=b, coef=stim_group_bi:time:Connectionrsfmri_cor_ngd_vta_scs_ptrh)
+  )
+
+manova_model_4 <- brm(rsFC ~ 
+           meanFD + FD.under_sqrt + ses + sex_bin +
+           nonstim_med_bi + comorbs + nihtbx_picvocab_agecorrected +
+           stim_group_bi + time + Connection +
+           stim_group_bi*time +
+           stim_group_bi*Connection +
+           time*Connection +
+           stim_group_bi*time*Connection +
+           (1|site.0),
+         data=netdat_lt_lc_3,      
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+```
+
+### Visualize STEP 2 results, paired sample t-tests for FC X time by stim group 
+```{r,warning=FALSE,message=FALSE}
+
+#
+# A continuation of the t.tests above, but now for improvers and non-improvers separately (stim only)
+#
+
+#
+# Get group dfs
+#
+
+temp_adhd_improve <- scatter_df[scatter_df$adhd_improver==1,]
+temp_adhd_improve <- reshape(temp_adhd_improve,idvar = "ID",timevar = "time",direction="wide")
+temp_adhd_noimprove <- scatter_df[scatter_df$adhd_improver!=1,]
+temp_adhd_noimprove <- reshape(temp_adhd_noimprove,idvar = "ID",timevar = "time",direction="wide")
+
+#
+# Left Putamen - FPN
+#
+
+cat("Left Putamen - FPN FC\nImprover Group, effect of Time")
+t.test(temp_adhd_improve$rsfmri_cor_ngd_fopa_scs_ptlh.0,temp_adhd_improve$rsfmri_cor_ngd_fopa_scs_ptlh.2,paired=TRUE)
+cat("Left Putamen - FPN FC\nNo Improver Group, effect of Time")
+t.test(temp_adhd_noimprove$rsfmri_cor_ngd_fopa_scs_ptlh.0,temp_adhd_noimprove$rsfmri_cor_ngd_fopa_scs_ptlh.2,paired=TRUE)
+
+summary(aov(rsfmri_cor_ngd_fopa_scs_ptlh ~ time * adhd_improver, data = scatter_df))
+
+x_time <- as.factor(as.numeric(scatter_df$time))
+y_fc <- as.numeric(scatter_df$rsfmri_cor_ngd_fopa_scs_ptlh)
+group <- as.character(as.numeric(scatter_df$adhd_improver))
+group[group=="1"] <- "Improved"
+group[group=="0"] <- "Not Improved"
+label <- "Left Putamen - FPN FC"
+
+ggplot(scatter_df, aes(x=interaction(x_time,group), y=y_fc, color=x_time)) +
+  geom_line(aes(x = interaction(x_time,group), group = scatter_df$ID), 
+            size = 0.5, color = 'gray') + 
+  geom_point(aes(x = interaction(x_time,group)), size = 2, position = position_dodge(width = 0.75)) + 
+  geom_boxplot() +
+  scale_color_manual(values=c("gray", "black"), labels = c("Baseline", "Year 2")) +
+  xlab("Group") + ylab(label) +
+  scale_x_discrete(labels = c("Improved","Improved","Not Improved","Not Improved")) +
+  theme(axis.text.x = element_blank(),axis.ticks.margin=unit(0,'cm')) +
+  guides(color=guide_legend(title="Time")) + 
+  ggtitle("Left Putamen - FPN") + 
+  geom_signif(y_position = c(0.51, 0.51), xmin = c(0.9, 2.9), xmax = c(2.1, 4.1),
+    annotation = c("NS", "p=0.001"), tip_length = 0, vjust = -1, color = "black") +
+  theme_minimal_grid(12)
+
+#
+# Right Putamen - VN
+#
+
+cat("Right Putamen - VN FC\nImprover Group, effect of Time")
+t.test(temp_adhd_improve$rsfmri_cor_ngd_vs_scs_ptrh.0,temp_adhd_improve$rsfmri_cor_ngd_vs_scs_ptrh.2,paired=TRUE)
+cat("Right Putamen - VN FC\nNo Improver Group, effect of Time")
+t.test(temp_adhd_noimprove$rsfmri_cor_ngd_vs_scs_ptrh.0,temp_adhd_noimprove$rsfmri_cor_ngd_vs_scs_ptrh.2,paired=TRUE)
+
+summary(aov(rsfmri_cor_ngd_vs_scs_ptrh ~ time * adhd_improver, data = scatter_df))
+
+x_time <- as.factor(as.numeric(scatter_df$time))
+y_fc <- as.numeric(scatter_df$rsfmri_cor_ngd_vs_scs_ptrh)
+group <- as.character(as.numeric(scatter_df$adhd_improver))
+group[group=="1"] <- "Improved"
+group[group=="0"] <- "Not Improved"
+label <- "Right Putamen - VN FC"
+
+ggplot(scatter_df, aes(x=interaction(x_time,group), y=y_fc, color=x_time)) +
+  geom_line(aes(x = interaction(x_time,group), group = scatter_df$ID), 
+            size = 0.5, color = 'gray') + 
+  geom_point(aes(x = interaction(x_time,group)), size = 2, position = position_dodge(width = 0.75)) + 
+  geom_boxplot() +
+  scale_color_manual(values=c("gray", "black"), labels = c("Baseline", "Year 2")) +
+  xlab("Group") + ylab(label) +
+  scale_x_discrete(labels = c("Improved","Improved","Not Improved","Not Improved")) +
+  theme(axis.text.x = element_blank(),axis.ticks.margin=unit(0,'cm')) +
+  guides(color=guide_legend(title="Time")) + 
+  ggtitle("Right Putamen - VN") + 
+  geom_signif(y_position = c(0.52, 0.52), xmin = c(0.9, 2.9), xmax = c(2.1, 4.1),
+    annotation = c("p=0.02", "p=0.10"), tip_length = 0, vjust = -1, color = "black") +
+  theme_minimal_grid(12)
+
+```
+
+## <br>
+### STEP 3 analysis: linking FC change to symptom change
+### Bayesian models predicting improvement (subclin, continuous, RCI)
+```{r,warning=FALSE,message=FALSE}
+
+dim(netdat1_gm)
+colnames(scatter_df_cont)
+dim(scatter_df_cont)
+
+scatter_df_cont <- read.csv('/Users/adamkaminski/Downloads/stimulant_master_df.csv')
+
+if(sum(as.integer(netdat1_gm$src_subject_id==scatter_df_cont$ID))==dim(netdat1_gm)[1]){
+  netdat1_gm$ADHD.Problems.0 <- scatter_df_cont$ADHD.Problems.0
+  netdat1_gm$ADHD.Problems.2 <- scatter_df_cont$ADHD.Problems.2
+  netdat1_gm$ADHD_subclin <- scatter_df_cont$ADHD_subclin
+}
+
+# Split df
+netdat1_gm_stim <- netdat1_gm[netdat1_gm$stim_group_bi=="1",]
+netdat1_gm_nostim <- netdat1_gm[netdat1_gm$stim_group_bi=="0",]
+
+# Run models
+
+#
+# Two connections, 1 model per stim group (2 total)
+#
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex1),
+  prior(normal(0,10), class=b, coef=nonstim_med_bi1),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=stim_length),
+  prior(normal(0,10), class=b, coef=ADHD.Problems.0),
+  prior(normal(0,10), class=b, coef=fopa_ptlh),
+  prior(normal(0,10), class=b, coef=vs_ptrh)
+  )
+
+mod1_subclin_gm_9_stim<-brm(as.numeric(ADHD_subclin) ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs + stim_length + nonstim_med_bi +
+           ADHD.Problems.0 +
+           fopa_ptlh + vs_ptrh +
+           (1|site.0),
+         data=netdat1_gm_stim, family="bernoulli",           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex1),
+  prior(normal(0,10), class=b, coef=nonstim_med_bi1),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=ADHD.Problems.0),
+  prior(normal(0,10), class=b, coef=fopa_ptlh),
+  prior(normal(0,10), class=b, coef=vs_ptrh)
+  )
+
+mod1_subclin_gm_9_nostim<-brm(as.numeric(ADHD_subclin) ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs + nonstim_med_bi +
+           ADHD.Problems.0 +
+           #fopa_cdelh + 
+           fopa_ptlh + vs_ptrh +
+           (1|site.0),
+         data=netdat1_gm_nostim, family="bernoulli",           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+#
+# Two connections, 1 model per connection AND stim group (4 total)
+
+# Predicting continuous symptoms (Y2 - baseline symptoms)
+
+netdat1_gm_stim$ADHD_change <- netdat1_gm_stim$ADHD.Problems.2 - netdat1_gm_stim$ADHD.Problems.0
+netdat1_gm_nostim$ADHD_change <- netdat1_gm_nostim$ADHD.Problems.2 - netdat1_gm_nostim$ADHD.Problems.0
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex1),
+  prior(normal(0,10), class=b, coef=nonstim_med_bi1),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=stim_length),
+  prior(normal(0,10), class=b, coef=ADHD.Problems.0),
+  prior(normal(0,10), class=b, coef=fopa_ptlh),
+  prior(normal(0,10), class=b, coef=vs_ptrh)
+  )
+
+mod1_symchange_gm_9_stim<-brm(ADHD_change ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs + stim_length + nonstim_med_bi +
+           ADHD.Problems.0 +
+           fopa_ptlh + vs_ptrh +
+           (1|site.0),
+         data=netdat1_gm_stim,           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex1),
+  prior(normal(0,10), class=b, coef=nonstim_med_bi1),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=ADHD.Problems.0),
+  prior(normal(0,10), class=b, coef=fopa_ptlh),
+  prior(normal(0,10), class=b, coef=vs_ptrh)
+  )
+
+mod1_symchange_gm_9_nostim<-brm(ADHD_change ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs + nonstim_med_bi +
+           ADHD.Problems.0 +
+           fopa_ptlh + vs_ptrh +
+           (1|site.0),
+         data=netdat1_gm_nostim,            
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+# Repeat above for RCI
+
+netdat1_gm_stim$RCI <- as.numeric(netdat1_gm_stim[,'ADHD_change']<=-11)
+netdat1_gm_nostim$RCI <- as.numeric(netdat1_gm_nostim[,'ADHD_change']<=-11)
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex1),
+  prior(normal(0,10), class=b, coef=nonstim_med_bi1),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=stim_length),
+  prior(normal(0,10), class=b, coef=ADHD.Problems.0),
+  prior(normal(0,10), class=b, coef=fopa_ptlh),
+  prior(normal(0,10), class=b, coef=vs_ptrh)
+  )
+
+mod1_rci_gm_9_stim<-brm(RCI ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs + stim_length + nonstim_med_bi +
+           ADHD.Problems.0 +
+           fopa_ptlh + vs_ptrh +
+           (1|site.0),
+         data=netdat1_gm_stim, family = "bernoulli",           
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+slope.prior.all <- c(
+  prior(normal(0,10), class=b, coef=meanFD.0),
+  prior(normal(0,10), class=b, coef=meanFD.2),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.0_sqrt),
+  prior(normal(0,10), class=b, coef=FD.under.0.2.2_sqrt),
+  prior(normal(0,10), class=b, coef=ses),
+  prior(normal(0,10), class=b, coef=sex1),
+  prior(normal(0,10), class=b, coef=nonstim_med_bi1),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.0),
+  prior(normal(0,10), class=b, coef=nihtbx_picvocab_agecorrected.2),
+  prior(normal(0,10), class=b, coef=comorbs),
+  prior(normal(0,10), class=b, coef=ADHD.Problems.0),
+  prior(normal(0,10), class=b, coef=fopa_ptlh),
+  prior(normal(0,10), class=b, coef=vs_ptrh)
+  )
+
+mod1_rci_gm_9_nostim<-brm(RCI ~ 
+           meanFD.0 + meanFD.2 +
+           FD.under.0.2.0_sqrt + FD.under.0.2.2_sqrt + ses + sex +
+           nihtbx_picvocab_agecorrected.0 +
+           nihtbx_picvocab_agecorrected.2 +
+           comorbs + nonstim_med_bi +
+           ADHD.Problems.0 +
+           fopa_ptlh + vs_ptrh +
+           (1|site.0),
+         data=netdat1_gm_nostim, family="bernoulli",            
+         prior = slope.prior.all,
+         silent = FALSE,
+         warmup = 2000, iter = 10000)
+
+```
+
+### Final plots
+```{r,warning=FALSE,message=FALSE}
+
+
+
+# MAIN ANALYSES
+
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/models/6.2/")
+load('env15.RData')
+
+
+
+# PLOTTING MAIN ANALYSES
+
+
+themods <- list(mod1_cdelh_gm_7,mod1_ptlh_gm_7,mod1_aalh_gm_7,
+                mod1_cderh_gm_7,mod1_ptrh_gm_7,mod1_aarh_gm_7)
+range <- c(12:21)
+titl <- c("Associations Between Change in Striatal rs-FC and Stimulant Exposure")
+
+themods <- list(mod1_cdelh_gm_7_nostim,mod1_ptlh_gm_7_nostim,mod1_aalh_gm_7_nostim,
+                mod1_cderh_gm_7_nostim,mod1_ptrh_gm_7_nostim,mod1_aarh_gm_7_nostim)
+range <- c(11:20)
+titl <- c("Associations Between Change in Striatal rs-FC and Other Psychotropic Medication\nExposure, Excluding Stimulant Exposed Individuals")
+
+iter <- 1
+for (mod in themods) {
+  temp <- posterior_summary(mod,prob=c(0.005, .025, .975, 0.995))
+  temp2 <- as.data.frame(temp)
+  temp3 <-as.data.frame(temp2[range,])
+  temp4 <- as.data.frame(t(temp3))
+  temp3$fc <- colnames(temp4)
+  if (iter==1){
+    tograph <- temp3
+  } else {
+    tograph <- rbind(tograph,temp3)
+  }
+  iter <- iter + 1
+}
+
+#
+# FOR 10 NETWORKS:
+#
+
+tograph$network <- c("L caudate","L caudate","L caudate","L caudate","L caudate","L caudate","L caudate","L caudate","L caudate","L caudate",
+                   "L putamen","L putamen","L putamen","L putamen","L putamen","L putamen","L putamen","L putamen","L putamen","L putamen",
+                   "L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc","L NAcc",
+                   "R caudate","R caudate","R caudate","R caudate","R caudate","R caudate","R caudate","R caudate","R caudate","R caudate",
+                   "R putamen","R putamen","R putamen","R putamen","R putamen","R putamen","R putamen","R putamen","R putamen","R putamen",
+                   "R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc","R NAcc")
+
+require(forcats)
+require(ggplot2)
+require(cowplot)
+
+tograph$sig <- as.numeric((tograph$Q2.5>0&tograph$Q97.5>0)|(tograph$Q2.5<0&tograph$Q97.5<0))
+a <- ifelse((tograph$sig==1), "red","black")
+
+fig2 <- ggplot(tograph,aes(x = as.factor(fc), y = Estimate, color = as.factor(network))) +
+  theme_cowplot(12) +
+  geom_point(position=position_dodge(width=0.5)) +
+  aes(x = fct_inorder(as.factor(fc))) +
+  geom_hline(yintercept = 0, linetype = 2, linewidth = I(0.2), color = I("black")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, color=a)) +
+  geom_errorbar(aes(x = as.factor(fc),
+                    ymin = Q0.5,
+                    ymax = Q99.5),
+                width = .1,
+                position=position_dodge(width=0.5)) +
+  labs(color = "Seeds", x="Networks", y="Posterior Distributions for Striatal rs-FC") +
+  theme(legend.position = c(0.45, 0.1),
+        legend.direction = "horizontal",
+        legend.text = element_text(face = "bold"),
+        legend.title = element_text(face = "bold")
+        ) +
+  scale_color_discrete(breaks=c('L caudate', 'L putamen', 'L NAcc', 'R caudate', 'R putamen', 'R NAcc')) +
+  geom_point(shape='-', size=5, color = 'black', data = data.frame(x=tograph$fc,
+                                                                   y=tograph$Q2.5,
+                                                                   color=tograph$network), aes(x=x, y=y, color=color)) +
+  geom_point(shape='-', size=5, color = 'black', data = data.frame(x=tograph$fc,
+                                                                   y=tograph$Q97.5,
+                                                                   color=tograph$network), aes(x=x, y=y, color=color)) +
+scale_x_discrete(labels=rep(c("Auditory","Cingulo-op-salience","Cingulo-parietal","Default Mode","Dorsal Attention","Fronto-parietal","Retrosplenial","Somatomotor","Ventral Attention","Visual"),times=6)) + 
+  ggtitle(titl) +
+  theme(plot.title = element_text(size = 12.5))
+
+
+
+
+
+
+# Table for behavioral results
+
+themods <- list(mod8_fopa_cdelh,mod8_fopa_ptlh,mod8_vs_ptrh, # Clinically meaningful stim
+                mod8_fopa_cdelh_nostim,mod8_fopa_ptlh_nostim,mod8_vs_ptrh_nostim, # Clinically meaningful nonstim
+                mod6_fopa_cdelh,mod6_fopa_ptlh,mod6_vs_ptrh, # Overall stim
+                mod6_fopa_cdelh_nostim,mod6_fopa_ptlh_nostim,mod6_vs_ptrh_nostim, # Overall nonstim
+                mod4_fopa_cdelh,mod4_fopa_ptlh,mod4_vs_ptrh, # Continuous stim
+                mod4_fopa_cdelh_nostim,mod4_fopa_ptlh_nostim,mod4_vs_ptrh_nostim) # Continuous nonstim
+modtype <- rep(c("Clinically Meaningful Improver","Overall Improver","Continuous Change"),each=6)
+stimtype <- rep(c("Exposed","Naive"),each=3,times=3)
+connection <- rep(c("Left Caudate-FPN Change","Left Putamen-FPN Change","Right Putamen-VN Change"),times=6)
+
+tab3 <- as.data.frame(matrix(NA,18,7))
+iter <- 1
+for (mod in themods) {
+  tab3[iter,1] <- connection[iter]
+  tab3[iter,2] <- stimtype[iter]
+  tab3[iter,3] <- modtype[iter]
+  temp <- fixef(mod)
+  tab3[iter,4:7] <- round(temp[12,],2)
+  iter <- iter + 1
+}
+colnames(tab3)[1:3] <- c("Connection","Psychostimulant Group","Dependent Variable")
+colnames(tab3)[4:7] <- colnames(temp)
+
+tab3_sort <- tab3[order(tab3$Connection),]
+
+tab3_sort_1 <- tab3_sort[tab3_sort$`Dependent Variable`!='Continuous Change',]
+tab3_sort_2 <- tab3_sort[tab3_sort$`Dependent Variable`=='Continuous Change',]
+
+tab3_sort_1_ns <- tab3_sort_1
+tab3_sort_1_ns[1,3] <- paste(tab3_sort_1_ns[1,3]," (n=19 of 81)",sep="")
+tab3_sort_1_ns[2,3] <- paste(tab3_sort_1_ns[2,3]," (n=48 of 98)",sep="")
+tab3_sort_1_ns[3,3] <- paste(tab3_sort_1_ns[3,3]," (n=44 of 81)",sep="")
+tab3_sort_1_ns[4,3] <- paste(tab3_sort_1_ns[4,3]," (n=75 of 98)",sep="")
+tab3_sort_1_ns[5,3] <- paste(tab3_sort_1_ns[5,3]," (n=19 of 81)",sep="")
+tab3_sort_1_ns[6,3] <- paste(tab3_sort_1_ns[6,3]," (n=48 of 98)",sep="")
+tab3_sort_1_ns[7,3] <- paste(tab3_sort_1_ns[7,3]," (n=44 of 81)",sep="")
+tab3_sort_1_ns[8,3] <- paste(tab3_sort_1_ns[8,3]," (n=75 of 98)",sep="")
+tab3_sort_1_ns[9,3] <- paste(tab3_sort_1_ns[9,3]," (n=19 of 81)",sep="")
+tab3_sort_1_ns[10,3] <- paste(tab3_sort_1_ns[10,3]," (n=48 of 98)",sep="")
+tab3_sort_1_ns[11,3] <- paste(tab3_sort_1_ns[11,3]," (n=44 of 81)",sep="")
+tab3_sort_1_ns[12,3] <- paste(tab3_sort_1_ns[12,3]," (n=75 of 98)",sep="")
+
+tab3_sort_gt_1 <- gt(as.data.frame(tab3_sort_1_ns),
+    groupname_col = "Connection",
+   rownames_to_stub = FALSE) |> 
+    tab_style(
+   style = cell_fill(color = "gray85"),
+   locations = cells_row_groups(groups = c("Left Caudate-FPN Change","Left Putamen-FPN Change","Right Putamen-VN Change"))
+  ) |>
+  tab_style(
+    style = cell_text(align = "center"),
+    locations = cells_column_labels(columns = colnames(tab3_sort)[2:7])) |>
+  cols_align(
+  align = c("center"),
+  columns = colnames(tab3_sort)[2:7]) |>    
+  tab_header(
+    title = 'Associations with Symptom Improvement from Baseline to Year Two')
+
+tab3_sort_1_ns_clin <- tab3_sort_1_ns
+tab3_sort_1_ns_clin <- tab3_sort_1_ns_clin[!grepl("Overall", tab3_sort_1_ns_clin$`Dependent Variable`),]
+colnames(tab3_sort_1_ns_clin)[3] <- "Clinically Sig. Improvers n"
+tab3_sort_1_ns_clin[,3] <- c("19 of 81","48 of 98","19 of 81","48 of 98","19 of 81","48 of 98")
+
+tab3_sort_gt_1.b <- gt(as.data.frame(tab3_sort_1_ns_clin),
+    groupname_col = "Connection",
+   rownames_to_stub = FALSE) |> 
+    tab_style(
+   style = cell_fill(color = "gray85"),
+   locations = cells_row_groups(groups = c("Left Caudate-FPN Change","Left Putamen-FPN Change","Right Putamen-VN Change"))
+  ) |>
+  tab_style(
+    style = cell_text(align = "center"),
+    locations = cells_column_labels(columns = colnames(tab3_sort_1_ns_clin)[2:7])) |>
+  cols_align(
+  align = c("center"),
+  columns = colnames(tab3_sort_1_ns_clin)[2:7]) |>    
+  tab_header(
+    title = 'Associations with Symptom Improvement from Baseline to Year Two') |>
+  tab_style(
+    style = list(cell_text(weight = "bold")),
+    locations = cells_body(rows=3)
+  )
+tab3_sort_gt_1.b
+
+tab3_sort_gt_2 <- gt(as.data.frame(tab3_sort_2),
+    groupname_col = "Connection",
+   rownames_to_stub = FALSE) |> 
+    tab_style(
+   style = cell_fill(color = "gray85"),
+   locations = cells_row_groups(groups = c("Left Caudate-FPN Change","Left Putamen-FPN Change","Right Putamen-VN Change"))
+  ) |>
+  tab_style(
+    style = cell_text(align = "center"),
+    locations = cells_column_labels(columns = colnames(tab3_sort)[2:7])) |>
+  cols_align(
+  align = c("center"),
+  columns = colnames(tab3_sort)[2:7]) |>    
+  tab_header(
+    title = 'Associations with Change in Symptoms from Baseline to Year Two')
+ 
+tab3_sort_gt_1
+#tab3_sort_gt_2
+tab3_sort_gt_1.b
+
+setwd("/Users/adamkaminski/Desktop/stimproj/tables/")
+gtsave(tab3_sort_gt, "tab3_sort_gt.html")
+
+
+#
+# chi-squared tests for improvement and exposure group
+#
+
+if (sum(as.numeric(scatter_df_cont$ID==netdat1_gm$src_subject_id))==dim(scatter_df_cont)[1]) {
+  scatter_df_cont$improver_lab <- scatter_df_cont$improver
+  scatter_df_cont$improver_lab[scatter_df_cont$improver_lab==1] <- "E"
+  scatter_df_cont$improver_lab[scatter_df_cont$improver_lab=="0"] <- "N"
+  
+  chisq.test(scatter_df_cont$improver_lab,scatter_df_cont$stim_group_bi.0)
+  table(scatter_df_cont$improver_lab,scatter_df_cont$stim_group_bi.0)
+  
+  scatter_df_cont$ADHD_subclin_lab <- scatter_df_cont$ADHD_subclin
+  scatter_df_cont$ADHD_subclin_lab[scatter_df_cont$ADHD_subclin_lab==1] <- "E"
+  scatter_df_cont$ADHD_subclin_lab[scatter_df_cont$ADHD_subclin_lab=="0"] <- "N"
+  
+  chisq.test(scatter_df_cont$ADHD_subclin_lab,scatter_df_cont$stim_group_bi.0)
+  table(scatter_df_cont$ADHD_subclin_lab,scatter_df_cont$stim_group_bi.0)
+  
+  chisq.test(scatter_df_cont$stim_group_bi.0,scatter_df_cont$nonstim_med_bi.0)
+  table(scatter_df_cont$stim_group_bi.0,scatter_df_cont$nonstim_med_bi.0)
+}
+
+
+print(summary(aov(cercsa_cdelh ~ time*stim_group_bi + Error(factor(ID)/time), data = scatter_df)))
+ggboxplot(scatter_df, x = "time", y = "cercsa_cdelh", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+print(summary(aov(rsfmri_cor_ngd_fopa_scs_cdelh ~ time*stim_group_bi + Error(factor(ID)/time), data = scatter_df)))
+ggboxplot(scatter_df, x = "time", y = "rsfmri_cor_ngd_fopa_scs_cdelh", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+print(summary(aov(rsfmri_cor_ngd_copa_scs_ptlh ~ time*stim_group_bi + Error(factor(ID)/time), data = scatter_df)))
+ggboxplot(scatter_df, x = "time", y = "rsfmri_cor_ngd_copa_scs_ptlh", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+print(summary(aov(rsfmri_cor_ngd_fopa_scs_ptlh ~ time*stim_group_bi + Error(factor(ID)/time), data = scatter_df)))
+ggboxplot(scatter_df, x = "time", y = "rsfmri_cor_ngd_fopa_scs_ptlh", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+print(summary(aov(smh_smm_ptlh ~ time*stim_group_bi + Error(factor(ID)/time), data = scatter_df)))
+ggboxplot(scatter_df, x = "time", y = "smh_smm_ptlh", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+print(summary(aov(rsfmri_cor_ngd_vta_scs_ptlh ~ time*stim_group_bi + Error(factor(ID)/time), data = scatter_df)))
+ggboxplot(scatter_df, x = "time", y = "rsfmri_cor_ngd_vta_scs_ptlh", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+print(summary(aov(rsfmri_cor_ngd_vs_scs_ptrh ~ time*stim_group_bi + Error(factor(ID)/time), data = scatter_df)))
+ggboxplot(scatter_df, x = "time", y = "rsfmri_cor_ngd_vs_scs_ptrh", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+netdat1_gm_long_stim <- netdat1_gm_long[netdat1_gm_long$Exposure=="1",]
+netdat1_gm_long_nostim <- netdat1_gm_long[netdat1_gm_long$Exposure=="0",]
+t.test(netdat1_gm_long_stim$fopa_cdelh~netdat1_gm_long_stim$Time,paired=TRUE)
+t.test(netdat1_gm_long_nostim$fopa_cdelh~netdat1_gm_long_nostim$Time,paired=TRUE)
+
+
+# Get ns 
+temp <- scatter_df_cont[scatter_df_cont$stim_group_bi.0=="1",]
+n_improver_stim <- sum(temp$improver)
+n_noimprover_stim <- dim(temp)[1] - sum(temp$improver)
+n_ADHD_subclin_stim <- sum(temp$ADHD_subclin)
+n_noADHD_subclin_stim <- dim(temp)[1] - sum(temp$ADHD_subclin)
+
+temp <- scatter_df_cont[scatter_df_cont$stim_group_bi.0=="0",]
+n_improver_nostim <- sum(temp$improver)
+n_noimprover_nostim <- dim(temp)[1] - sum(temp$improver)
+n_ADHD_subclin_nostim <- sum(temp$ADHD_subclin)
+n_noADHD_subclin_nostim <- dim(temp)[1] - sum(temp$ADHD_subclin)
+
+
+n_ADHD_subclin_stim
+n_ADHD_subclin_stim+n_noADHD_subclin_stim
+n_ADHD_subclin_nostim
+n_ADHD_subclin_nostim+n_noADHD_subclin_nostim
+n_improver_stim
+n_improver_stim+n_noimprover_stim
+n_improver_nostim
+n_improver_nostim+n_noimprover_nostim
+
+temp_stim <- scatter_df_cont[scatter_df_cont$stim_group_bi.0=="1",]
+temp_NOstim <- scatter_df_cont[scatter_df_cont$stim_group_bi.0=="0",]
+
+sum(as.numeric(temp_stim$ADHD_subclin=="1"))
+sum(as.numeric(temp_stim$ADHD_subclin=="0"))
+sum(as.numeric(temp_NOstim$ADHD_subclin=="1"))
+sum(as.numeric(temp_NOstim$ADHD_subclin=="0"))
+
+# Write master df
+if (sum(as.integer(scatter_df_cont$ID == netdat1_gm$src_subject_id)) == dim(scatter_df_cont)[1]){
+  master_df = cbind(scatter_df_cont,netdat1_gm)
+}
+setwd("/Users/adamkaminski/Documents")
+write.csv(master_df, "stimulant_master_df.csv", row.names=FALSE)
+
+```
