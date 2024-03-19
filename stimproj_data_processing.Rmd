@@ -1,0 +1,1063 @@
+---
+title: "Stimulant project"
+author: "Adam Kaminski"
+date: "2023-05-12"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(knitr)
+require(gt)
+```
+
+# <br>
+## Data processing
+
+#### Options
+##### Inclusion criteria selection
+##### Decision to combine certain cortical functional networks
+```{r}
+# user inputs
+# - inclusion criteria
+#     ... 1 = KSADS + rs-fMRI
+#     ... 2 = CBCL + rs-fMRI
+#     ... 3 = KSADS + CBCL + rs-fMRI
+
+ksadscrit <- "KSADS (ADHD present at baseline)"
+cbclcrit <- "CBCL (>=60 on ADHD problems DSM-oriented scale)"
+rsfmricrit <- "rs-fMRI recommended use (baseline and year 2)"
+
+inclcrit <- 3
+
+if(inclcrit==3){writeLines(paste("Inclusion criteria:\n-",ksadscrit,"\n-",cbclcrit,"\n-",rsfmricrit,sep=" "))}
+
+# - Combine certain cortical functional networks?
+#     ... 1 = yes
+#     ... 0 = no
+combine <- 1
+
+if(combine==1){writeLines("Averaging cingulo-opercular + salience and somatomotor hand + somatomotor mouth networks")}
+
+```
+
+## <br>
+#### KSADS
+##### From NDADownloadManager
+##### Exclude individual if ADHD is not present at baseline
+```{r, warning=FALSE}
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/ABCD_data/")
+ksads <- read.csv('abcd_ksad01_adhd_present.csv')
+ksads <- ksads[,-2:-3]
+ksads <- reshape(ksads, idvar = "ID", timevar = "time", direction = "wide")
+origlen <- dim(ksads)[1]
+ksads <- ksads[,-3:-4]
+ksads <- ksads[ksads$adhd_present.0==1,]
+ksads <- ksads[complete.cases(ksads), ]
+
+writeLines(paste("Starting n (i.e., people with KSADS data): ",origlen,"\nOutcome: ",dim(ksads)[1]," people have ADHD at baseline according to KSADS",sep=""))
+
+```
+
+## <br>
+#### Recommended rs-FC data use
+##### From NDADownloadManager
+##### Exclude individual if rs-fMRI data is not recommended at baseline or the year 2 timepoint
+```{r, warning=FALSE}
+setwd("/Users/adamkaminski/Desktop/stimproj/data/ABCD_data/")
+imgincl <- read.csv('abcd_imgincl01_rsfmri.csv')
+imgincl <- imgincl[,-2:-3]
+imgincl <- reshape(imgincl, idvar = "ID", timevar = "time", direction = "wide")
+origlen <- dim(imgincl)[1]
+imgincl <- imgincl[imgincl$imgincl_rsfmri_include.0==1,]
+imgincl <- imgincl[imgincl$imgincl_rsfmri_include.2==1,]
+imgincl <- imgincl[complete.cases(imgincl), ]
+
+writeLines(paste("Starting n (i.e., people with rs-fMRI data): ",origlen,"\nOutcome: ",dim(imgincl)[1]," people have recommended rs-fMRI data at baseline and the year 2 timepoint",sep=""))
+
+```
+
+## <br>
+#### CBCL
+##### From NDADownloadManager
+##### Exclude individual if t-score on the DSM-oriented ADHD problems scale < 60 at baseline
+```{r, warning=FALSE}
+setwd("/Users/adamkaminski/Desktop/stimproj/data/ABCD_data/")
+cbcl <- read.csv('./abcd_cbcls01.csv')
+cbcl <- cbcl[cbcl$time=="baseline_year_1_arm_1",]
+origlen <- dim(cbcl)[1]
+cbcl <- cbcl[cbcl$ADHD.CBCL.DSM5.Scale..t.score.>=60,]
+
+writeLines(paste("Starting n (i.e., people with cbcl baseline data): ",origlen,"\nOutcome: ",dim(cbcl)[1]," people have t-scores 60 or above on the DSM-oriented ADHD problems scale at baseline",sep=""))
+
+```
+
+## <br>
+#### Determine individuals who meet combinations of criteria (KSADS, rs-fMRI, CBCL)
+```{r, warning=FALSE}
+
+ncrits <- matrix(0,3,1)
+overlap1 <- imgincl$ID[imgincl$ID%in%ksads$ID]
+ncrits[1,1] <- length(overlap1)
+overlap2 <- cbcl$ID[cbcl$ID%in%imgincl$ID]
+ncrits[2,1] <- length(overlap2)
+overlap3 <- imgincl$ID[imgincl$ID%in%ksads$ID]
+overlap3 <- cbcl$ID[cbcl$ID%in%overlap3]
+ncrits[3,1] <- length(overlap3)
+colnames(ncrits) <- "n"
+rownames(ncrits) <- c("KSADS + rs-fMRI recommeded use","CBCL + rs-fMRI recommeded use","KSADS + CBCL + rs-fMRI recommeded use")
+
+gt(as.data.frame(ncrits),
+   rownames_to_stub = TRUE)
+
+# # # # # # # # # # # # # # # # # # # # # # #
+# !!! Below depends on user input above !!! #
+# # # # # # # # # # # # # # # # # # # # # # #
+
+if (inclcrit == 1) {overlap <- overlap1
+criteria <- "KSADS + rs-fMRI recommended use"
+} else if (inclcrit == 2) {overlap <- overlap2
+criteria <- "CBCL + rs-fMRI recommended use"
+} else if (inclcrit == 3) {overlap <- overlap3
+criteria <- "KSADS + CBCL + rs-fMRI recommended use"
+}
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/nda_downloads/")
+write.csv(overlap,paste("subs_inclcrit",inclcrit,".csv",sep=""),row.names = FALSE)
+
+```
+
+#### FC data (step 1)
+##### From NDADownloadManager
+##### Keep caudate, putamen, and nucleus accumbens columns only
+##### Remove rows of individuals who do not meet selected criteria
+##### Convert long (by timepoint) to wide and calculate rs-fMRI differences between baseline and year 2 timepoint
+##### Remove "none" network
+##### Remove individuals missing caudate, putamen, and nucleus accumbens - cortical network FC data
+```{r, warning=FALSE}
+setwd("/Users/adamkaminski/Desktop/stimproj/data/")
+netdat <- read.csv('mrirscor02_v1.csv')
+keep <- 1:dim(netdat)[2]
+
+# Keep only caudate, putamen, and nucleus accumbens columns
+for (i in 13:length(netdat)){
+  if (isFALSE(grepl("cde",colnames(netdat)[i],fixed=TRUE)) & 
+      isFALSE(grepl("pt",colnames(netdat)[i],fixed=TRUE)) &
+      isFALSE(grepl("aa",colnames(netdat)[i],fixed=TRUE))) {
+    keep[i] <- 0
+  }
+}
+netdat <- netdat[,c(keep)]
+
+# Keep only included subs
+netdat <- netdat[netdat$src_subject_id%in%overlap,]
+
+# Convert long to wide
+netdat$eventname[netdat$eventname=="baseline_year_1_arm_1"] <- 0
+netdat$eventname[netdat$eventname=="2_year_follow_up_y_arm_1"] <- 2
+netdat <- reshape(netdat, idvar = "src_subject_id", timevar = "eventname", direction = "wide")
+
+# Remove "none" network
+netdat <- netdat[,-((1:dim(netdat)[2])*as.numeric(grepl("_none_",colnames(netdat),fixed=TRUE)))]
+
+# # # # # # # # # # # # # # # # # # # # # # #
+# !!! Below depends on user input above !!! #
+# # # # # # # # # # # # # # # # # # # # # # #
+
+# Combine networks if desired
+if (combine == 1) {
+  CON <- as.data.frame(netdat[,grepl("_cerc_",colnames(netdat),fixed=TRUE)])
+  SAL <- as.data.frame(netdat[,grepl("_sa_",colnames(netdat),fixed=TRUE)])
+  SMH <- netdat[,grepl("_smh_",colnames(netdat),fixed=TRUE)]
+  SMM <- netdat[,grepl("_smm_",colnames(netdat),fixed=TRUE)]
+  
+  avgconsal <- matrix(0,dim(netdat)[1],dim(CON)[2])
+  avgsmhsmm <- matrix(0,dim(netdat)[1],dim(SMH)[2])
+  for (i in 1:dim(CON)[2]) {
+    avgconsal[,i] <- (as.numeric(CON[,i]) + as.numeric(SAL[,i]))/2
+    avgsmhsmm[,i] <- (as.numeric(SMH[,i]) + as.numeric(SMM[,i]))/2
+  }
+  colnames(avgconsal) <-  gsub('_cerc_','_cercsa_',colnames(CON))
+  colnames(avgsmhsmm) <- gsub('_smh_','_smhsmm_',colnames(SMH))
+  
+  netdat <- netdat[,!grepl("_cerc_",colnames(netdat),fixed=TRUE)]
+  netdat <- netdat[,!grepl("_sa_",colnames(netdat),fixed=TRUE)]
+  netdat <- netdat[,!grepl("_smh_",colnames(netdat),fixed=TRUE)]
+  netdat <- netdat[,!grepl("_smm_",colnames(netdat),fixed=TRUE)]
+
+  netdat <- cbind(netdat,avgconsal)
+  netdat <- cbind(netdat,avgsmhsmm)
+}
+
+if (combine == 1) {
+  net_codes <- c("_au_","_cercsa_","_copa_","_df_","_dsa_","_fopa_","_rst_",
+                 "_smhsmm_","_vta_","vs")
+} else {
+  net_codes <- c("_au_","_cerc_","_copa_","_df_","_dsa_","_fopa_","_rst_",
+                 "_sa_","_smh_","_smm_","_vta_","_vs_")
+}
+
+# Create difference scores
+# Determine number of seed-network FC connections:
+#   - 10 functional networks (removed "none" network; combining cerc and sa, and smh and smm networks)
+#   - 6 striatal seed
+#   - 10 x 6 = 60
+
+if (combine == 1) {n<-(10*6)} else {n<-(12*6)}
+
+diff <- as.data.frame(matrix(0,dim(netdat)[1],n))
+count <- 1
+for (i in 1:length(net_codes)) {
+  temp_net <- netdat[,grepl(net_codes[i],colnames(netdat),fixed=TRUE)]
+  for (se in 1:6) {
+    str1 <- colnames(temp_net)[se]
+    str2 <- colnames(temp_net)[se+6]
+    len <- nchar(str1)
+    if (substr(str1,1,len-2) == substr(str2,1,len-2)) {
+      new_str <- gsub('rsfmri_cor_ngd_','',substr(str1,1,len-2))
+      new_str <- gsub('_scs','',new_str)
+      colnames(diff)[count] <- new_str
+      diff[,count] <- as.numeric(temp_net[,se]) - as.numeric(temp_net[,se+6])
+      count <- count + 1
+    } else {
+      stop(paste("These colnames do not match:",se,"and",se+6))
+    }
+  }
+}
+
+# remove unnecessary cols (i.e., 0 + 2 FC) from netdat and add change in FC
+if (combine == 1) {netdat <- netdat[,c(1:11,60:69)]
+} else {netdat <- netdat[,c(1:11,84:93)]}
+
+netdat <- cbind(netdat,diff)
+
+# remove subjects with MISSING FC DATA
+netdat <- netdat[complete.cases(netdat), ]
+
+new_overlap <- netdat$src_subject_id
+
+writeLines(paste("Using ",criteria," criteria (n=",length(overlap),")\nOf these, ",dim(netdat)[1]," people have required FC data",sep=""))
+
+# trim site IDs 
+netdat$rsfmri_cor_ngd_scs_visitid.0 <- substr(netdat$rsfmri_cor_ngd_scs_visitid.0,1,4)
+netdat$rsfmri_cor_ngd_scs_visitid.2 <- substr(netdat$rsfmri_cor_ngd_scs_visitid.2,1,4)
+
+# create a age difference variable
+netdat$age_diff <- as.numeric(netdat$interview_age.2) - as.numeric(netdat$interview_age.0)
+
+# create 0 and 1 sex variable
+netdat$sex <- netdat$sex.0
+netdat$sex[netdat$sex=="M"] <- 1
+netdat$sex[netdat$sex=="F"] <- 0
+
+#
+# add education variables
+#
+setwd("/Users/adamkaminski/Desktop/stimproj/data/nda_downloads/")
+demos <- read.csv("demographics.csv",header=TRUE)
+# Keep only included subs
+demos <- demos[demos$src_subject_id%in%new_overlap,]
+# get z-scores
+demos$parent_ed_z <- (demos$parent_ed-mean(demos$parent_ed,na.rm=TRUE))/sd(demos$parent_ed,na.rm=TRUE)
+demos$partner_ed_z <- (demos$partner_ed-mean(demos$partner_ed,na.rm=TRUE))/sd(demos$partner_ed,na.rm=TRUE) 
+demos$comb_inc[demos$comb_inc==999] <- NA
+demos$comb_inc[demos$comb_inc==777] <- NA
+demos$comb_inc_z <- (demos$comb_inc-mean(demos$comb_inc,na.rm=TRUE))/sd(demos$comb_inc,na.rm=TRUE)
+# add ses variable
+for (i in 1:length(demos$parent_ed_z)) {
+  if (is.na(demos$partner_ed_z[i])) {
+    if (is.na(demos$comb_inc_z[i])) {
+      demos$ses[i] <- demos$parent_ed_z[i]
+    } else {
+      demos$ses[i] <- (demos$parent_ed_z[i] + demos$comb_inc_z[i])/2
+    }
+  } else if (is.na(demos$comb_inc_z[i])) {
+      demos$ses[i] <- (demos$parent_ed_z[i] + demos$partner_ed_z[i])/2
+  } else {
+    demos$ses[i] <- (demos$parent_ed_z[i] + demos$partner_ed_z[i] + demos$comb_inc_z[i])/3
+  }
+}
+
+# match IDs
+demos <- demos[order(demos$src_subject_id),]
+netdat <- netdat[order(netdat$src_subject_id),]
+if (sum(as.numeric(demos$src_subject_id==netdat$src_subject_id))==dim(demos)[1]) {
+  netdat <- cbind(netdat,demos$ses)
+}
+colnames(netdat)[dim(netdat)[2]] <- "ses"
+
+#require(knitr)
+writeLines("First 20 rows of wide dataframe:")
+kable(netdat[1:20,])
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/FC_data/")
+if (combine == 1) {write.csv(netdat,'mrirscor02_v2_combine_1.csv')
+} else {write.csv(netdat,'mrirscor02_v2_combine_0.csv')}
+
+```
+
+#### FC data (step 2)
+##### Convert wide to long (by network); each network has its own row for each individual (1 column per striatal seed)
+```{r,warning=FALSE}
+
+# make netdat long by network:
+if (combine == 1) { networks <- c("auditory","cingulo.op.salience","cingulo.parietal",
+              "default","dorsal","fronto","retrosplenial",
+              "sensorimotor","ventral","visual")
+} else { networks <- c("auditory","cingulo.opercular","cingulo.parietal",
+              "default","dorsal","fronto","retrosplenial","salience",
+              "sensorimotor.hand","sensorimotor.mouth",
+              "ventral","visual")
+}
+
+seeds <- c("cdelh","ptlh","aalh",
+           "cderh","ptrh","aarh")
+
+temp <- as.data.frame(matrix(0,dim(netdat)[1]*length(networks),length(seeds)+10))
+start <- 1
+hit <- 1
+inc <- length(new_overlap) - 1
+for (i in 1:length(seeds)) {
+  for (col in 1:length(netdat)) {
+    if (grepl(seeds[i],colnames(netdat)[col],fixed=TRUE)) {
+      temp[start:c(start+inc),i+11] <- netdat[,col]
+      temp[start:c(start+inc),1+10] <- netdat$sex
+      temp[start:c(start+inc),1+9] <- netdat$age_diff
+      temp[start:c(start+inc),1+8] <- netdat$ses
+      temp[start:c(start+inc),1+7] <- netdat$rsfmri_cor_ngd_scs_visitid.2
+      temp[start:c(start+inc),1+6] <- netdat$rsfmri_cor_ngd_scs_visitid.0
+      temp[start:c(start+inc),1+5] <- netdat$rsfmri_cor_ngd_scs_stnvols.2 # num vols < 0.2 mm FD
+      temp[start:c(start+inc),1+4] <- netdat$rsfmri_cor_ngd_scs_stnvols.0 # num vols < 0.2 mm FD
+      temp[start:c(start+inc),1+3] <- netdat$rsfmri_cor_ngd_scs_meanmn.2 # mean mm FD
+      temp[start:c(start+inc),1+2] <- netdat$rsfmri_cor_ngd_scs_meanmn.0 # mean mm FD
+      temp[start:c(start+inc),1+1] <- networks[hit]
+      temp[start:c(start+inc),1] <- netdat$src_subject_id
+      start <- start + inc + 1
+      hit <- hit + 1
+    }
+  }
+  start <- 1
+  hit <- 1
+}
+colnames(temp)[1:11] <- c("ID","network","meanFD.0","meanFD.2","FD.under.0.2.0","FD.under.0.2.2",
+                         "site.0","site.2","ses","age.diff","sex")
+colnames(temp)[12:17] <- c("left.caudate","left.putamen","left.accumbens",
+                          "right.caudate","right.putamen","right.accumbens")
+
+temp <- temp[order(temp$network),]
+temp <- temp[order(temp$ID),]
+
+writeLines("First 20 rows of long dataframe:")
+kable(temp[1:20,])
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/FC_data/")
+if (combine == 1) { write.csv(temp,'mrirscor02_v3_combine_1.csv') 
+} else { write.csv(temp,'mrirscor02_v3_combine_0.csv')}
+
+netdat_l <- temp
+
+```
+
+#### Medication data
+##### Remove rows of individuals who do not meet selected criteria
+##### Save csv, decode drug codes by hand using website: https://bioportal.bioontology.org/
+```{r, warning=FALSE}
+
+# This chunk takes the original medication spreadsheet (from NDADownloadManager; in long format) and excludes all individuals who do not meet the above criteria (i.e., KSADS + rs-fMRI). Therefore, the output will have row numbers corresponding to: (314 subjects * 3 timepoints) - the number of missing timepoint data. This is what I then give to Brylee to decode the drug information using this website: https://bioportal.bioontology.org/
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/")
+med <- read.csv('medsy01.csv')
+
+med_subs <- med[med$The.NDAR.Global.Unique.Identifier..GUID..for.research.subject%in%new_overlap,]
+temp <- reshape(med_subs, idvar = "The.NDAR.Global.Unique.Identifier..GUID..for.research.subject", timevar = "The.event.name.for.which.the.data.was.collected", direction = "wide")
+a <- sort(temp$The.NDAR.Global.Unique.Identifier..GUID..for.research.subject)
+b <- sort(new_overlap)
+if (sum(as.numeric(a==b)) != length(b)) {
+  stop("IDs for med data don't match IDs which are meeting criteria on KSADS + rs-fMRI. Something is wrong!")
+}
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/ABCD_data/")
+write.csv(med_subs,"medsy01_inclIDs.csv",na = "",row.names = FALSE)
+
+```
+
+#### Decoded medication data
+```{r, warning = FALSE}
+
+# Import and combine data, match to true subs, convert long to wide
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/")
+subs1 <- read.csv(file = './subIDs_first.csv', header=TRUE)
+subs2 <- read.csv(file = './subIDs_second.csv', header=TRUE)
+cnames <- colnames(subs1)
+colnames(subs2) <- cnames
+subs1_2 <- rbind(subs1,subs2)
+
+subs <- subs1_2[subs1_2$subID%in%new_overlap,]
+
+stimsubs <- reshape(subs, idvar = "subID", timevar = "time", direction = "wide")
+
+```
+
+#### "getgroups" function
+```{r}
+
+# get_groups function
+# input: reshaped df with drug info (1 row per individual) and search term for column
+# output: df with two columns (one for ID and another for drug group)
+
+get_groups <- function(df,search) {
+  numrows <- nrow(df)
+  stimgroups = as.data.frame(matrix('none',numrows,2))
+  colnames(stimgroups) <- c("subID","group")
+  stimgroups$subID <- df$subID
+  
+  stimgroupcount <- as.data.frame(matrix(0,1,9))
+
+  df <- df[,grepl(search,colnames(stimsubs))]
+  df$ID <- stimsubs$subID
+  
+  for (i in 1:dim(df)[1]) {
+    if (is.na(df[i,1])  || is.na(df[i,2]) || is.na(df[i,3])) {
+      stimgroups$group[i] <- 'missing'
+      stimgroupcount[1,8] <- stimgroupcount[1,8] + 1
+    } else {
+      #   stim 0 only (0)
+      if (df[i,1] == 1  && df[i,2] == 0 && df[i,3] == 0) {
+        stimgroups$group[i] <- 'b'
+        stimgroupcount[1,1] <- stimgroupcount[1,1] + 1
+      }
+      #   stim 1 only (1)
+      else if (df[i,1] == 0  && df[i,2] == 1 && df[i,3] == 0) {
+        stimgroups$group[i] <- 'y1'
+        stimgroupcount[1,2] <- stimgroupcount[1,2] + 1
+      }
+      #   stim 2 only (2)
+      else if (df[i,1] == 0  && df[i,2] == 0 && df[i,3] == 1) {
+        stimgroups$group[i] <- 'y2'
+        stimgroupcount[1,3] <- stimgroupcount[1,3] + 1
+      }
+      #   stim 0 + 1 (3)
+      else if (df[i,1] == 1  && df[i,2] == 1 && df[i,3] == 0) {
+        stimgroups$group[i] <- 'b+y1'
+        stimgroupcount[1,4] <- stimgroupcount[1,4] + 1
+      }
+      #   stim 0 + 2 (4)
+      else if (df[i,1] == 1  && df[i,2] == 0 && df[i,3] == 1) {
+        stimgroups$group[i] <- 'b+y2'
+        stimgroupcount[1,5] <- stimgroupcount[1,5] + 1
+      }
+      #   stim 1 + 2 (5)
+      else if (df[i,1] == 0  && df[i,2] == 1 && df[i,3] == 1) {
+        stimgroups$group[i] <- 'y1+y2'
+        stimgroupcount[1,6] <- stimgroupcount[1,6] + 1
+      }
+      #   stim 0 + 1 + 2 (6)
+      else if (df[i,1] == 1  && df[i,2] == 1 && df[i,3] == 1) {
+        stimgroups$group[i] <- 'b+y1+y2'
+        stimgroupcount[1,7] <- stimgroupcount[1,7] + 1
+      }
+      # no stim
+      else {
+        stimgroupcount[1,9] <- stimgroupcount[1,9] + 1
+      }
+    }
+  }
+  
+  missing <- df[stimgroups$group=='missing',]
+  missing <- missing[is.na(missing[,2]),]
+  
+  print(paste(search,": ",dim(missing)[1]," individuals are missing y1 data",sep=""))
+  
+  for (i in 1:dim(missing)[1]) {
+    if (missing[i,1] == 1 && missing[i,3] == 1) {
+      stimgroups$group[stimgroups$subID==missing$ID[i]] <- 'b+y2'
+    } 
+    else if (missing[i,1] == 0 && missing[i,3] == 1) {
+      stimgroups$group[stimgroups$subID==missing$ID[i]] <- 'y2'
+    } 
+    else if (missing[i,1] == 1 && missing[i,3] == 0) {
+      stimgroups$group[stimgroups$subID==missing$ID[i]] <- 'b'
+    } 
+    else if (missing[i,1] == 0 && missing[i,3] == 0) {
+      stimgroups$group[stimgroups$subID==missing$ID[i]] <- 'none'
+    } 
+  }
+  
+return(stimgroups)
+} 
+
+```
+
+#### Create groups based on reported psychotropic medications (6 categories)
+##### Report missing data
+##### Medication data
+```{r,warning=FALSE,message=FALSE}
+
+# function "get_groups" defined in hidden chunk
+# input: reshaped df with drug info (1 row per individual)
+# output: df with two columns (one for ID and another for drug group)
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/models/6.2/")
+#load("env15.RData")
+
+labels <- c("ADHD_stim","ADHD_non.stim","Anti.depressant",
+            "seizures_and_bipolar_disorder","antihypertensive",
+            "antipsychotic")
+
+tab <- matrix(0,length(labels),8)
+colnames(tab) <- c("b","b+y1","b+y1+y2","b+y2","none","y1","y1+y2","y2")
+rownames(tab) <-c("ADHD Stimulant","ADHD Non-stimulant","Antidepressant",
+            "Seizures and Bipolar Disorder","Antihypertensive",
+            "Antipsychotic")
+
+for (lab in 1:length(labels)) {
+  
+  stimgroups <- get_groups(stimsubs,labels[lab])
+  stimgroups <- stimgroups[stimgroups$subID%in%netdat1_gm$src_subject_id,]
+  temp <- table(stimgroups$group)
+  tab[lab,colnames(tab)%in%names(temp)] <- temp
+
+}
+
+tab <- as.data.frame(tab[, c(1,6,8,2,4,7,3,5)])
+tab[,9] <- tab$none
+colnames(tab)[8:9] <- c("any","none")
+for (i in 1:6) { tab[i,8] <- sum(tab[i,1:7]) }
+
+tab2 <- matrix(0,6,5)
+tab2[1,1] <- sum(tab[1,1:3])
+tab2[2,1] <- sum(tab[2,1:3])
+tab2[3,1] <- sum(tab[3,1:3])
+tab2[4,1] <- sum(tab[4,1:3])
+tab2[5,1] <- sum(tab[5,1:3])
+tab2[6,1] <- sum(tab[6,1:3])
+tab2[1,2] <- sum(tab[1,4:6])
+tab2[2,2] <- sum(tab[2,4:6])
+tab2[3,2] <- sum(tab[3,4:6])
+tab2[4,2] <- sum(tab[4,4:6])
+tab2[5,2] <- sum(tab[5,4:6])
+tab2[6,2] <- sum(tab[6,4:6])
+tab2[1:6,3] <- tab[1:6,7]
+tab2[1:6,4] <- tab[1:6,8]
+tab2[1:6,5] <- tab[1:6,9]
+
+colnames(tab2) <- c("1","2","3","Any","None")
+rownames(tab2) <- rownames(tab)
+
+```
+
+```{r}
+
+# Resources
+# - https://gt.albert-rapp.de/styling.html
+# - https://gt.rstudio.com/reference/tab_footnote.html
+require(gt)
+nice_tab <- gt(as.data.frame(tab),
+   rownames_to_stub = TRUE) |>
+   cols_label(
+     'b'=md("**B**"),'y1'=md("**Y1**"),'y2'=md("**Y2**"),'b+y1'=md("**B+Y1**"),
+     'b+y2'=md("**B+Y2**"),'y1+y2'=md("**Y1+Y2**"),'b+y1+y2'=md("**B+Y1+Y2**"),
+     'any'=md("**Any**"),'none'=md("**None**")
+   ) |>
+   tab_header(
+    title = 'Reported Psychotropic Medications',
+    subtitle = paste("At what timepoints individuals (total n = ",tab[1,8]+tab[1,9],") reported a psychotropic medication prescription",sep="")
+    ) |> 
+  opt_stylize(style = 3, color = 'gray') |> 
+  tab_options(
+    # These were the ones we applied in the first chapter
+    data_row.padding = px(2),
+    summary_row.padding = px(3), # A bit more padding for summaries
+    row_group.padding = px(4)    # And even more for our groups
+    ) |> 
+  tab_source_note(
+    source_note = "B = baseline timepoint; Y1 = year 1 timepoint; Y2 = year 2 timepoint;
+    All columns, besides Any and None, indicate only those timepoints and no other timepoints"
+    )
+  
+nice_tab
+
+```
+
+#### Combine psychotropic drug data and FC data
+```{r,warning=FALSE,include=FALSE}
+
+# Get psychotropic drug groups
+stimgroups <- get_groups(stimsubs,"ADHD_stim")
+nonstimadhdgroups <- get_groups(stimsubs,"ADHD_non.stim")
+antidepgroups <- get_groups(stimsubs,"Anti.depressant")
+bpdgroups <- get_groups(stimsubs,"seizures_and_bipolar_disorder")
+ahtgroups <- get_groups(stimsubs,"antihypertensive")
+antipsygroups <- get_groups(stimsubs,"antipsychotic")
+
+# Combine psychotropic drug groups
+allgroups <- cbind(stimgroups,nonstimadhdgroups$group,antidepgroups$group,
+                   bpdgroups$group,ahtgroups$group,antipsygroups$group)
+colnames(allgroups) <- c("subID","ADHD_stim","ADHD_non.stim","Anti.depressant",
+                         "seizures_and_bipolar_disorder","antihypertensive","antipsychotic")
+
+# Replace all drug categories with exposed or not (does not depend on number of timepoints reported)
+allgroups[allgroups=="none"] <- 0
+allgroups[allgroups!=0] <- 1
+
+allgroups$subID <- stimgroups$subID
+
+# Create variable for length of time on a stimulant (reported at 0, 1, 2, or 3 timepoints)
+stimgroups$length[stimgroups$group=="none"] <- 0
+stimgroups$length[stimgroups$group=="b"] <- 1
+stimgroups$length[stimgroups$group=="y1"] <- 1
+stimgroups$length[stimgroups$group=="y2"] <- 1
+stimgroups$length[stimgroups$group=="b+y1"] <- 2
+stimgroups$length[stimgroups$group=="b+y2"] <- 2
+stimgroups$length[stimgroups$group=="y1+y2"] <- 2
+stimgroups$length[stimgroups$group=="b+y1+y2"] <- 3
+
+# combine group info with FC df
+# 12 is the number of networks
+# wide:
+netdat <- netdat[order(netdat$src_subject_id),]
+stimgroups <- stimgroups[order(stimgroups$subID),]
+allgroups <- allgroups[order(allgroups$subID),]
+if (sum(as.numeric(netdat$src_subject_id == stimgroups$subID))==dim(netdat)[1]) {
+  netdat$stim_group_lab <- stimgroups$group
+  netdat$stim_length <- stimgroups$length
+}  else {
+  stop(paste("IDs do not match"))
+}
+if (sum(as.numeric(netdat$src_subject_id == allgroups$subID))==dim(netdat)[1]) {
+  # Stim or no?
+  netdat$stim_group_bi <- allgroups$ADHD_stim 
+  # Other non-stim med or no? 
+  netdat$nonstim_med_bi <- as.character(as.numeric((allgroups$ADHD_non.stim == "1" | allgroups$Anti.depressant == "1" | allgroups$seizures_and_bipolar_disorder == "1" | allgroups$antihypertensive == "1" | allgroups$antipsychotic == "1"))) 
+} else {
+  stop(paste("IDs do not match"))
+}
+
+# long:
+start <- 1
+netdat_l <- netdat_l[order(netdat_l$ID),]
+netdat_l <- netdat_l[order(netdat_l$network),]
+temp <- table(netdat_l$network)
+numnet <- length(temp)
+for (i in 1:numnet) {
+  netdat_l$stim_bi[start:c(start+(temp[i]-1))] <- netdat$stim_group_bi
+  netdat_l$nonstim_med_bi[start:c(start+(temp[i]-1))] <- netdat$nonstim_med_bi
+  netdat_l$stimlen[start:c(start+(temp[i]-1))] <- netdat$stim_length
+  start <- start + temp[i]
+}
+
+# troubleshoot issues here:
+netdat_l[,c(3:6,9,11:16)] <- as.numeric(unlist(netdat_l[,c(3:6,9,11:16)]))
+
+colnames(netdat)[c(8,11,14,18,21)] <- c("FD.under.0.2.2","meanFD.2","site.0",
+                                        "FD.under.0.2.0","meanFD.0")
+
+netdat[,c(8,11,18,21)] <- as.numeric(unlist(netdat[,c(8,11,18,21)]))
+
+```
+
+### Create dfs for different medication comparisons
+```{r,warning=FALSE}
+
+# Stim + possibly other vs. NO stim (but possibly other meds; PLUS none)
+# DV is stim_group_bi
+netdat1 <- netdat 
+# Stim ONLY vs. no meds AT ALL
+# DV is stim_group_bi
+netdat2 <- netdat[netdat$nonstim_med_bi!=1,]
+# ALL other meds (excluding stim) vs. no meds AT ALL
+# DV is nonstim_med_bi
+netdat3 <- netdat[netdat$stim_group_bi!=1,]
+
+# long data:
+
+# Stim + polypharmacy vs. NO stims (but possibly other meds; PLUS none)
+# DV is stim_group_bi
+netdat1_l <- netdat_l
+# Stim ONLY vs. no meds AT ALL
+# DV is stim_group_bi
+netdat2_l <- netdat_l[netdat_l$nonstim_med_bi!=1,]
+# ALL other meds (excluding stim) vs. no meds AT ALL
+# DV is nonstim_med_bi
+netdat3_l <- netdat_l[netdat_l$stim_bi!=1,]
+
+```
+
+### n for each group
+```{r,warning=FALSE,message=FALSE}
+require(brms)
+require(bayesplot)
+require(ggplot2)
+require(forcats)
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/models/6.2/")
+load("env15.RData")
+
+df_tab <- as.data.frame(matrix(0,3,2))
+df_tab[1,1] <- table(netdat1$stim_group_bi)[2]
+df_tab[2,1] <- table(netdat2$stim_group_bi)[2]
+df_tab[3,1] <- table(netdat3$nonstim_med_bi)[2]
+df_tab[1,2] <- table(netdat1$stim_group_bi)[1]
+df_tab[2,2] <- table(netdat2$stim_group_bi)[1]
+df_tab[3,2] <- table(netdat3$nonstim_med_bi)[1]
+
+colnames(df_tab) <- c("Medication","Naive")
+rownames(df_tab) <- c("Nonexclusive Stimulant vs. Possible Other Medication","Exclusive Stimulant vs. No Medication",
+                      "Definite Other Medication vs. No Medication")
+
+# Plot 
+gt(df_tab,
+   rownames_to_stub = TRUE) |>
+  opt_stylize(style = 3, color = 'gray'
+    )
+
+```
+
+### MOTION check 1: Differences between each set of groups 
+```{r,warning=FALSE,message=FALSE}
+
+motion_tab <- matrix(0,12,4)
+
+motion_vars_1 <- netdat1[,c(18,21,8,11,87)]
+motion_vars_2 <- netdat2[,c(18,21,8,11,87)]
+motion_vars_3 <- netdat3[,c(18,21,8,11,88)]
+
+row <- 1
+col <- 1
+for (i in 1:12) {
+  if (i < 5) {
+    t_out <- t.test(motion_vars_1[,col]~netdat1$stim_group_bi)
+    col <- col + 1
+    if (col == 5) { col <- 1 }
+  } else if (i < 9) {
+    t_out <- t.test(motion_vars_2[,col]~netdat2$stim_group_bi)
+    col <- col + 1
+    if (col == 5) { col <- 1 }
+  } else if (i < 13) {
+    t_out <- t.test(motion_vars_3[,col]~netdat3$nonstim_med_bi)
+    col <- col + 1
+    if (col == 5) { col <- 1 }
+  }
+    motion_tab[row,1] <- round(t_out$estimate[2],digits=3)
+    motion_tab[row,2] <- round(t_out$estimate[1],digits=3)
+    motion_tab[row,3] <- round(t_out$statistic,digits=3)
+    motion_tab[row,4] <- round(t_out$p.value,digits=3)
+    row <- row + 1
+}
+
+colnames(motion_tab) <- c("Medication Group","Naive Group","t statistic","p value")
+rownames(motion_tab) <- c("Baseline Length (sec)","Baseline Mean FD (mm)","Year 2 Length (sec)","Year 2 Mean FD (mm)","Baseline Length (sec)","Baseline Mean FD (mm)","Year 2 Length (sec)","Year 2 Mean FD (mm)","Baseline Length (sec)","Baseline Mean FD (mm)","Year 2 Length (sec)","Year 2 Mean FD (mm)")
+
+gt(as.data.frame(motion_tab),
+   rownames_to_stub = TRUE) |>
+   tab_header(
+    title = 'Group rs-FC Motion Differences') |> 
+  opt_stylize(style = 6, color = 'gray') |> 
+      tab_row_group(
+    label = "Other Med, Nothing",
+    rows = 9:12
+  ) |> 
+    tab_row_group(
+    label = "Exc. Stimulant, Nothing",
+    rows = 5:8
+  ) |> 
+    tab_row_group(
+    label = "Stimulant, No Stimulant",
+    rows = 1:4
+  )
+
+```
+
+### MOTION check 2: Differences in each group between time-points
+```{r,warning=FALSE,message=FALSE}
+
+motion_vars_1_long <- reshape(motion_vars_1, 
+        direction = "long",
+        varying = list(names(motion_vars_1)[c(1,3)],names(motion_vars_1)[c(2,4)]),
+        v.names = c("Length_sec","MeanFD_mm"),
+        timevar = "Time")
+
+motion_vars_2_long <- reshape(motion_vars_2, 
+        direction = "long",
+        varying = list(names(motion_vars_2)[c(1,3)],names(motion_vars_2)[c(2,4)]),
+        v.names = c("Length_sec","MeanFD_mm"),
+        timevar = "Time")
+
+motion_vars_3_long <- reshape(motion_vars_3, 
+        direction = "long",
+        varying = list(names(motion_vars_3)[c(1,3)],names(motion_vars_3)[c(2,4)]),
+        v.names = c("Length_sec","MeanFD_mm"),
+        timevar = "Time")
+
+require("ggpubr")
+
+cat("GROUPS = Stimulant, No Stimulant\nTIME = Baseline, Year 2\nDV = Length (sec)")
+print(summary(aov(Length_sec ~ Time*stim_group_bi + Error(factor(id)/Time), data = motion_vars_1_long)))
+ggboxplot(motion_vars_1_long, x = "Time", y = "Length_sec", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Stimulant, No Stimulant\nTIME = Baseline, Year 2\nDV = Mean FD (mm)")
+print(summary(aov(MeanFD_mm ~ Time*stim_group_bi + Error(factor(id)/Time), data = motion_vars_1_long)))
+ggboxplot(motion_vars_1_long, x = "Time", y = "MeanFD_mm", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Exc. Stimulant, Nothing\nTIME = Baseline, Year 2\nDV = Length (sec)")
+print(summary(aov(Length_sec ~ Time*stim_group_bi + Error(factor(id)/Time), data = motion_vars_2_long)))
+ggboxplot(motion_vars_2_long, x = "Time", y = "Length_sec", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Exc. Stimulant, Nothing\nTIME = Baseline, Year 2\nDV = Mean FD (mm)")
+print(summary(aov(MeanFD_mm ~ Time*stim_group_bi + Error(factor(id)/Time), data = motion_vars_2_long)))
+ggboxplot(motion_vars_2_long, x = "Time", y = "MeanFD_mm", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Other Med., Nothing\nTIME = Baseline, Year 2\nDV = Length (sec)")
+print(summary(aov(Length_sec ~ Time*nonstim_med_bi + Error(factor(id)/Time), data = motion_vars_3_long)))
+ggboxplot(motion_vars_3_long, x = "Time", y = "Length_sec", color = "nonstim_med_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Other Med., Nothing\nTIME = Baseline, Year 2\nDV = Mean FD (mm)")
+print(summary(aov(MeanFD_mm ~ Time*nonstim_med_bi + Error(factor(id)/Time), data = motion_vars_3_long)))
+ggboxplot(motion_vars_3_long, x = "Time", y = "MeanFD_mm", color = "nonstim_med_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+
+```
+
+### MOTION check 3: Excluding mean FD >= 0.5mm
+```{r,warning=FALSE,message=FALSE}
+
+netdat1_gm <- netdat1[netdat1$meanFD.0<0.5&netdat1$meanFD.2<0.5,]
+netdat2_gm <- netdat2[netdat2$meanFD.0<0.5&netdat2$meanFD.2<0.5,]
+netdat3_gm <- netdat3[netdat3$meanFD.0<0.5&netdat3$meanFD.2<0.5,]
+
+df_tab <- as.data.frame(matrix(0,3,2))
+df_tab[1,1] <- table(netdat1_gm$stim_group_bi)[2]
+df_tab[2,1] <- table(netdat2_gm$stim_group_bi)[2]
+df_tab[3,1] <- table(netdat3_gm$nonstim_med_bi)[2]
+df_tab[1,2] <- table(netdat1_gm$stim_group_bi)[1]
+df_tab[2,2] <- table(netdat2_gm$stim_group_bi)[1]
+df_tab[3,2] <- table(netdat3_gm$nonstim_med_bi)[1]
+
+colnames(df_tab) <- c("Medication","Naive")
+rownames(df_tab) <- c("Nonexclusive Stimulant vs. Possible Other Medication","Exclusive Stimulant vs. No Medication","Definite Other Medication vs. No Medication")
+
+# Plot 
+gt(df_tab,
+   rownames_to_stub = TRUE) |>
+  tab_header(
+    title = 'Group sizes, Excluding meanFD>0.5mm') |> 
+  opt_stylize(style = 3, color = 'pink'
+    )
+
+motion_tab <- matrix(0,12,4)
+
+motion_vars_1 <- netdat1_gm[,c(18,21,8,11,87)]
+motion_vars_2 <- netdat2_gm[,c(18,21,8,11,87)]
+motion_vars_3 <- netdat3_gm[,c(18,21,8,11,88)]
+
+row <- 1
+col <- 1
+for (i in 1:12) {
+  if (i < 5) {
+    t_out <- t.test(motion_vars_1[,col]~netdat1_gm$stim_group_bi)
+    col <- col + 1
+    if (col == 5) { col <- 1 }
+  } else if (i < 9) {
+    t_out <- t.test(motion_vars_2[,col]~netdat2_gm$stim_group_bi)
+    col <- col + 1
+    if (col == 5) { col <- 1 }
+  } else if (i < 13) {
+    t_out <- t.test(motion_vars_3[,col]~netdat3_gm$nonstim_med_bi)
+    col <- col + 1
+    if (col == 5) { col <- 1 }
+  }
+    motion_tab[row,1] <- round(t_out$estimate[2],digits=3)
+    motion_tab[row,2] <- round(t_out$estimate[1],digits=3)
+    motion_tab[row,3] <- round(t_out$statistic,digits=3)
+    motion_tab[row,4] <- round(t_out$p.value,digits=3)
+    row <- row + 1
+}
+
+colnames(motion_tab) <- c("Medication Group","Naive Group","t statistic","p value")
+rownames(motion_tab) <- c("Baseline Length (sec)","Baseline Mean FD (mm)","Year 2 Length (sec)","Year 2 Mean FD (mm)","Baseline Length (sec)","Baseline Mean FD (mm)","Year 2 Length (sec)","Year 2 Mean FD (mm)","Baseline Length (sec)","Baseline Mean FD (mm)","Year 2 Length (sec)","Year 2 Mean FD (mm)")
+
+gt(as.data.frame(motion_tab),
+   rownames_to_stub = TRUE) |>
+   tab_header(
+    title = 'Group rs-FC Motion Differences, Excluding meanFD>0.5mm') |> 
+  opt_stylize(style = 6, color = 'pink') |> 
+      tab_row_group(
+    label = "Other Med, Nothing",
+    rows = 9:12
+  ) |> 
+    tab_row_group(
+    label = "Exc. Stimulant, Nothing",
+    rows = 5:8
+  ) |> 
+    tab_row_group(
+    label = "Stimulant, No Stimulant",
+    rows = 1:4
+  )
+
+#
+# Testing for Time X Group differences for motion parameters
+#
+
+motion_vars_1_long <- reshape(motion_vars_1, 
+        direction = "long",
+        varying = list(names(motion_vars_1)[c(1,3)],names(motion_vars_1)[c(2,4)]),
+        v.names = c("Length_sec","MeanFD_mm"),
+        timevar = "Time")
+
+motion_vars_2_long <- reshape(motion_vars_2, 
+        direction = "long",
+        varying = list(names(motion_vars_2)[c(1,3)],names(motion_vars_2)[c(2,4)]),
+        v.names = c("Length_sec","MeanFD_mm"),
+        timevar = "Time")
+
+motion_vars_3_long <- reshape(motion_vars_3, 
+        direction = "long",
+        varying = list(names(motion_vars_3)[c(1,3)],names(motion_vars_3)[c(2,4)]),
+        v.names = c("Length_sec","MeanFD_mm"),
+        timevar = "Time")
+
+cat("GROUPS = Stimulant, No Stimulant\nTIME = Baseline, Year 2\nDV = Length (sec)")
+print(summary(aov(Length_sec ~ Time*stim_group_bi + Error(factor(id)/Time), data = motion_vars_1_long)))
+ggboxplot(motion_vars_1_long, x = "Time", y = "Length_sec", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Stimulant, No Stimulant\nTIME = Baseline, Year 2\nDV = Mean FD (mm)")
+print(summary(aov(MeanFD_mm ~ Time*stim_group_bi + Error(factor(id)/Time), data = motion_vars_1_long)))
+ggboxplot(motion_vars_1_long, x = "Time", y = "MeanFD_mm", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Exc. Stimulant, Nothing\nTIME = Baseline, Year 2\nDV = Length (sec)")
+print(summary(aov(Length_sec ~ Time*stim_group_bi + Error(factor(id)/Time), data = motion_vars_2_long)))
+ggboxplot(motion_vars_2_long, x = "Time", y = "Length_sec", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Exc. Stimulant, Nothing\nTIME = Baseline, Year 2\nDV = Mean FD (mm)")
+print(summary(aov(MeanFD_mm ~ Time*stim_group_bi + Error(factor(id)/Time), data = motion_vars_2_long)))
+ggboxplot(motion_vars_2_long, x = "Time", y = "MeanFD_mm", color = "stim_group_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Other Med., Nothing\nTIME = Baseline, Year 2\nDV = Length (sec)")
+print(summary(aov(Length_sec ~ Time*nonstim_med_bi + Error(factor(id)/Time), data = motion_vars_3_long)))
+ggboxplot(motion_vars_3_long, x = "Time", y = "Length_sec", color = "nonstim_med_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+cat("GROUPS = Other Med., Nothing\nTIME = Baseline, Year 2\nDV = Mean FD (mm)")
+print(summary(aov(MeanFD_mm ~ Time*nonstim_med_bi + Error(factor(id)/Time), data = motion_vars_3_long)))
+ggboxplot(motion_vars_3_long, x = "Time", y = "MeanFD_mm", color = "nonstim_med_bi",
+          palette = c("#00AFBB", "#E7B800"))
+
+```
+
+#### Covariate differences between groups
+```{r,warning=FALSE,message=FALSE}
+
+#
+# Load covariates and test for group differences
+#
+
+setwd("/Users/adamkaminski/Desktop/stimproj/data/nda_downloads/")
+IQ <- read.csv("nih_toolbox.csv",header=TRUE)
+ 
+# Keep only included subs
+IQ <- IQ[IQ$src_subject_id%in%new_overlap,]
+IQ$eventname[IQ$eventname=="baseline_year_1_arm_1"] <- 0
+IQ$eventname[IQ$eventname=="2_year_follow_up_y_arm_1"] <- 2
+IQ <- reshape(IQ, idvar = "src_subject_id", timevar = "eventname", direction = "wide")
+
+# match IDs
+demos <- demos[demos$src_subject_id%in%netdat1$src_subject_id,]
+demos <- demos[order(demos$src_subject_id),]
+IQ <- IQ[IQ$src_subject_id%in%netdat1$src_subject_id,]
+IQ <- IQ[order(IQ$src_subject_id),]
+
+if (sum(as.numeric(demos$src_subject_id==netdat1$src_subject_id))==dim(netdat1)[1]) {
+  grps <- netdat1[,c(87)]
+}
+if (sum(as.numeric(IQ$src_subject_id==netdat1$src_subject_id))==dim(netdat1)[1]) {
+  demos <- cbind(demos,IQ[,c(2,4,14,16)])
+}
+
+# reorder demos, take out sex
+sex <- demos$sex
+demos <- demos[,c(1,14,12,15,13,11)]
+
+# make temp dfs
+grps <- as.data.frame(grps)
+
+if (sum(as.numeric(demos$src_subject_id==netdat1$src_subject_id))==dim(demos)[1]) {
+  demos$mean_FD_mm_0 <- netdat1$meanFD.0
+  demos$mean_FD_mm_2 <- netdat1$meanFD.2
+  demos$length_sec_0 <- netdat1$FD.under.0.2.0
+  demos$length_sec_2 <- netdat1$FD.under.0.2.2
+}
+
+demos_gm <- demos[(demos$mean_FD_mm_0<0.5&demos$mean_FD_mm_2<0.5),]
+grps_gm <- as.data.frame(grps[(demos$mean_FD_mm_0<0.5&demos$mean_FD_mm_2<0.5),])
+colnames(grps_gm) <- c("grps")
+
+demo_diffs <- matrix(0,9,4)
+row <- 1
+for (i in 3:length(demos_gm)) {
+    t_out <- t.test(demos_gm[,i]~grps_gm$grps)
+    demo_diffs[row,1] <- round(t_out$estimate[2],digits=3)
+    demo_diffs[row,2] <- round(t_out$estimate[1],digits=3)
+    demo_diffs[row,3] <- round(t_out$statistic,digits=3)
+    demo_diffs[row,4] <- round(t_out$p.value,digits=3)
+    row <- row + 1
+}
+
+rownames(demo_diffs) <- c("Baseline Age (months)","Year 2 Age (months)","Baseline FSIQ","Year 2 FSIQ","SES",
+                          "Baseline Mean FD","Year 2 Mean FD","Baseline Length of Data","Year 2 Length of Data")
+colnames(demo_diffs) <- c("Medication Group","Naive Group","t statistic","p value")
+
+require(gt)
+nice_tab_2 <- gt(as.data.frame(demo_diffs),
+   rownames_to_stub = TRUE) |> 
+    tab_row_group(
+    label = "Stimulant vs. No Stimulant",
+    rows = 1:9
+  ) |> 
+  tab_header(
+    title = 'Demographic Differences Between Medication Groups'
+    ) |> 
+  opt_stylize(style = 3, color = 'gray'
+    )
+   
+nice_tab_2
+
+sex_gm <- sex[(demos$mean_FD_mm_0<0.5&demos$mean_FD_mm_2<0.5)]
+sex_diffs <- matrix(0,2,4)
+sex_t <- sex[grps_gm$grps!="1"]
+temp <- chisq.test(netdat1_gm$sex,grps_gm$grps)
+sex_diffs[1:2,1:2] <- temp$observed
+sex_diffs[1,3] <- round(temp$statistic, digits=3)
+sex_diffs[1,4] <- round(temp$p.value, digits=3)
+sex_diffs[2,3:4] <- c("-","-")
+colnames(sex_diffs) <- c("Naive","Medication","chi-squared statistic","p value")
+rownames(sex_diffs) <- c("F","M")
+
+nice_tab_3 <- gt(as.data.frame(sex_diffs),
+   rownames_to_stub = TRUE) |> 
+    tab_row_group(
+    label = "Stimulant vs. No Stimulant",
+    rows = 1:2
+  ) |> 
+  opt_stylize(style = 3, color = 'gray'
+    )
+   
+nice_tab_3
+
+
+```
