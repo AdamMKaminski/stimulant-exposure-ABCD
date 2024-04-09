@@ -1,5 +1,18 @@
 
+require(tidyr)
+require(ggplot2)
 
+#
+# 
+#
+#
+#
+# Obtain IDs for 1. baseline ADHD (KSADS), and 2. has CBCL data at baseline and Y2
+#
+#
+#
+#
+#
 
 # Get IDs with ADHD at baseline based on KSADS
 setwd("/Users/adamkaminski/Desktop/stimproj/data/ABCD_data/")
@@ -40,4 +53,60 @@ med <- read.csv('medsy01.csv')
 med_subs <- med[med$The.NDAR.Global.Unique.Identifier..GUID..for.research.subject%in%full_IDs_new,]
 write.csv(med_subs,"medsy01_moreIDs.csv",na = "",row.names = FALSE)
 
+#
+# 
+#
+#
+#
+# For obtained IDs, look at symptom change (DSM-oriented CBCL scales)
+#
+#
+#
+#
+#
+
+cbcl <- cbcl[cbcl$ID%in%full_IDs,]
+cbcl$time[cbcl$time=='0_baseline_year_1_arm_1'] <- '0'
+cbcl$time[cbcl$time=='1_year_follow_up_y_arm_1'] <- '1'
+cbcl$time[cbcl$time=='2_year_follow_up_y_arm_1'] <- '2'
+colnames(cbcl) <- c('ID','age','sex','time','Depress','AnxDisord','SomaticPr','ADHD','Opposit','Conduct','Sluggish','Obsessive','Stress')
+
+# for wide
+cbcl_wide <- reshape(cbcl, idvar = "ID", timevar = "time", direction = "wide")
+# for long
+cbcl_long <- as.data.frame(pivot_longer(cbcl_wide, 
+                        cols = matches("\\.\\d+$"),
+                        names_to = c(".value", "Time"),  
+                        names_pattern = "(\\w+)\\.(\\d+)", 
+                        values_to = "Value"))
+
+cbcl_long_no1 <- cbcl_long[(cbcl_long$Time!="1"),]
+
+
+# Function for visualizing symptom change from baseline to Y2
+plot_symptom_change <- function(df,col,title) { 
+  
+  fig <- ggplot(df, aes(x=Time, y=.data[[col]], color=Time)) +
+    geom_line(aes(x = Time, group = df$ID), 
+              size = 0.5, color = 'gray') + 
+    geom_point(aes(x = Time), size = 2, position = position_dodge(width = 0.75)) + 
+    geom_boxplot() +
+    scale_color_manual(values=c("gray", "black"), labels = c("Baseline", "Year 2")) +
+    xlab("Group") + ylab("T-Score") +
+    scale_x_discrete(labels = c("Baseline","Year 2")) +
+    theme(axis.text.x = element_blank(),axis.ticks.margin=unit(0,'cm')) +
+    guides(color=guide_legend(title="Time")) + 
+    ggtitle(title) +
+    theme_minimal_grid(12)
+  
+  print(fig)
+}
+
+# Loop through DSM-oriented scales and plot symptom change
+cols <- colnames(cbcl_long_no1)[5:13]
+par(mfrow = c(1, 8))
+for(col in cols){
+  dev.new()
+  plot_symptom_change(cbcl_long_no1,col,col)
+}
 
