@@ -1,16 +1,11 @@
 
 require(tidyr)
 require(ggplot2)
+require(cowplot)
 
-#
-# 
-#
 #
 #
 # Obtain IDs for 1. baseline ADHD (KSADS), and 2. has CBCL data at baseline and Y2
-#
-#
-#
 #
 #
 
@@ -54,18 +49,34 @@ med_subs <- med[med$The.NDAR.Global.Unique.Identifier..GUID..for.research.subjec
 write.csv(med_subs,"medsy01_moreIDs.csv",na = "",row.names = FALSE)
 
 #
-# 
 #
+# Following med decoding...
+#
+#
+
+# get stimulant exposure for new IDs
+new_exp <- read.csv('new_subs.csv')
+new_exp <- new_exp[,-4]
+
+# get stimulant exposure for old IDs
+old_dat <- read.csv('stimulant_master_df.csv')
+old_exp <- as.data.frame(matrix(0,179,3))
+colnames(old_exp) <- c('sub_id','stim_exposed','combined_other')
+old_exp$sub_id <- old_dat$ID
+old_exp$stim_exposed <- old_dat$stim_group_bi
+old_exp$combined_other <- old_dat$nonstim_med_bi
+
+# combine old and new IDs
+total_exp <- rbind(new_exp,old_exp)
+
+
 #
 #
 # For obtained IDs, look at symptom change (DSM-oriented CBCL scales)
 #
 #
-#
-#
-#
 
-cbcl <- cbcl[cbcl$ID%in%full_IDs,]
+cbcl <- cbcl[cbcl$A.ID%in%full_IDs,]
 cbcl$time[cbcl$time=='0_baseline_year_1_arm_1'] <- '0'
 cbcl$time[cbcl$time=='1_year_follow_up_y_arm_1'] <- '1'
 cbcl$time[cbcl$time=='2_year_follow_up_y_arm_1'] <- '2'
@@ -73,40 +84,98 @@ colnames(cbcl) <- c('ID','age','sex','time','Depress','AnxDisord','SomaticPr','A
 
 # for wide
 cbcl_wide <- reshape(cbcl, idvar = "ID", timevar = "time", direction = "wide")
-# for long
-cbcl_long <- as.data.frame(pivot_longer(cbcl_wide, 
-                        cols = matches("\\.\\d+$"),
-                        names_to = c(".value", "Time"),  
-                        names_pattern = "(\\w+)\\.(\\d+)", 
-                        values_to = "Value"))
+# add stimulant exposure
+cbcl_wide_sorted <- cbcl_wide[order(cbcl_wide$ID),]
+total_exp_sorted <- total_exp[order(total_exp$sub_id),]
+if(sum(as.integer(cbcl_wide_sorted$ID==total_exp_sorted$sub_id))==dim(cbcl_wide_sorted)[1]){
+  cbcl_wide_sorted_exp <- cbind(cbcl_wide_sorted,total_exp_sorted)
+}
 
-cbcl_long_no1 <- cbcl_long[(cbcl_long$Time!="1"),]
+# function for returning long
+make_long <- function(wide_dat) {
+  long_dat <- as.data.frame(pivot_longer(wide_dat, 
+                            cols = matches("\\.\\d+$"),
+                            names_to = c(".value", "Time"),  
+                            names_pattern = "(\\w+)\\.(\\d+)", 
+                            values_to = "Value"))
+  return(long_dat)
+}
+  
+cbcl_long_sorted_exp <- make_long(cbcl_wide_sorted_exp)
 
+# remove Y1 rows
+cbcl_long_no1 <- cbcl_long[cbcl_long$Time!="1",]
+cbcl_long_sorted_exp <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time!="1",]
 
 # Function for visualizing symptom change from baseline to Y2
-plot_symptom_change <- function(df,col,title) { 
+plot_symptom_change <- function(df,col,title,grouped) { 
   
-  fig <- ggplot(df, aes(x=Time, y=.data[[col]], color=Time)) +
-    geom_line(aes(x = Time, group = df$ID), 
-              size = 0.5, color = 'gray') + 
-    geom_point(aes(x = Time), size = 2, position = position_dodge(width = 0.75)) + 
-    geom_boxplot() +
-    scale_color_manual(values=c("gray", "black"), labels = c("Baseline", "Year 2")) +
-    xlab("Group") + ylab("T-Score") +
-    scale_x_discrete(labels = c("Baseline","Year 2")) +
-    theme(axis.text.x = element_blank(),axis.ticks.margin=unit(0,'cm')) +
-    guides(color=guide_legend(title="Time")) + 
-    ggtitle(title) +
-    theme_minimal_grid(12)
+  if (grouped==0) {
+    fig <- ggplot(df, aes(x=Time, y=.data[[col]], color=Time)) +
+      geom_line(aes(x = Time, group = df$ID), 
+                size = 0.5, color = 'gray') + 
+      geom_point(aes(x = Time), size = 2, position = position_dodge(width = 0.75)) + 
+      geom_boxplot() +
+      scale_color_manual(values=c("gray", "black"), labels = c("Baseline", "Year 2")) +
+      xlab("Group") + ylab("T-Score") +
+      scale_x_discrete(labels = c("Baseline","Year 2")) +
+      theme(axis.text.x = element_blank(),axis.ticks.margin=unit(0,'cm')) +
+      guides(color=guide_legend(title="Time")) + 
+      ggtitle(title) +
+      theme_minimal_grid(12)
+  } else if (grouped==1) {
+    fig <- ggplot(df, aes(x=interaction(Time,stim_exposed), y=.data[[col]], color=Time)) +
+      geom_line(aes(x = interaction(Time,stim_exposed), group = df$ID), 
+                size = 0.5, color = 'gray') + 
+      geom_point(aes(x = interaction(Time,stim_exposed)), size = 2, position = position_dodge(width = 0.75)) + 
+      geom_boxplot() +
+      scale_color_manual(values=c("gray", "black"), labels = c("Baseline", "Year 2")) +
+      xlab("Group") + ylab("T-score") +
+      scale_x_discrete(labels = c("Naive","Naive","Exposed","Exposed")) +
+      theme(axis.text.x = element_blank(),axis.ticks.margin=unit(0,'cm')) +
+      guides(color=guide_legend(title="Time")) + 
+      ggtitle(title) + 
+      theme_minimal_grid(12)
+  }
   
   print(fig)
 }
 
 # Loop through DSM-oriented scales and plot symptom change
-cols <- colnames(cbcl_long_no1)[5:13]
+dat <- cbcl_long_sorted_exp
+cols <- colnames(dat)[8:16]
 par(mfrow = c(1, 8))
 for(col in cols){
   dev.new()
-  plot_symptom_change(cbcl_long_no1,col,col)
+  plot_symptom_change(dat,col,col,1)
 }
+
+# ANOVAs
+result <- aov(Depress ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
+summary(result)
+
+result <- aov(AnxDisord ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
+summary(result)
+
+result <- aov(SomaticPr ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
+summary(result)
+
+result <- aov(ADHD ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
+summary(result)
+
+result <- aov(Opposit ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
+summary(result)
+
+result <- aov(Conduct ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
+summary(result)
+
+result <- aov(Sluggish ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
+summary(result)
+
+result <- aov(Obsessive ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
+summary(result)
+
+result <- aov(Stress ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
+summary(result)
+
 
