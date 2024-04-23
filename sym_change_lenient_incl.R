@@ -178,4 +178,14 @@ summary(result)
 result <- aov(Stress ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
 summary(result)
 
+# t tests for ADHD symptoms
+
+cbcl_long_sorted_exp_0 <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time=="0",]
+cbcl_long_sorted_exp_2 <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time=="2",]
+
+t.test(cbcl_long_sorted_exp_0$ADHD~cbcl_long_sorted_exp_0$stim_exposed)
+t.test(cbcl_long_sorted_exp_2$ADHD~cbcl_long_sorted_exp_2$stim_exposed)
+
+
+
 
