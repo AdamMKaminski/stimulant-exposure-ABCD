@@ -164,7 +164,7 @@ for (i in 1:length(net_codes)) {
 if (combine == 1) {netdat <- netdat[,c(1:10,59:67)]}
 netdat <- cbind(netdat,diff)
 
-# remove unnecessary cols (all FC besides sign. from original analysis for comparison)
+# remove unnecessary cols (all FC besides sign. from original analysis for comparison, also desired covariates)
 netdat_TD_orig_cxs <- netdat[,c(1:10,36,57,59:67,93,114)]
 
 # make df long
@@ -183,6 +183,27 @@ netdat_TD_orig_cxs_long <- netdat_TD_orig_cxs_long[order(netdat_TD_orig_cxs_long
 if (all(cbcl_filtered$ID == netdat_TD_orig_cxs_long$ID)) {
   netdat_TD_orig_cxs_long$ADHD.Problems <- cbcl_filtered$ADHD.CBCL.DSM5.Scale..t.score.
 }
+
+# IQ
+IQ <- read.csv('nih_toolbox.csv')
+
+IQ_TD <- IQ[IQ$src_subject_id %in% cbcl_filtered$ID,]
+IQ_TD <- IQ_TD[,c(1,4,5)]
+colnames(IQ_TD) <- c("ID","time","iq")
+IQ_TD$time[IQ_TD$time=='baseline_year_1_arm_1'] <- 0
+IQ_TD$time[IQ_TD$time=='2_year_follow_up_y_arm_1'] <- 2
+IQ_TD_wide <- reshape(IQ_TD, idvar = "ID", timevar = "time", direction = "wide") 
+
+IQ_adhd <- IQ[IQ$src_subject_id %in% orig_dat$ID,]  # from below
+IQ_adhd <- IQ_adhd[,c(1,4,5)]
+colnames(IQ_adhd) <- c("ID","time","iq")
+IQ_adhd$time[IQ_adhd$time=='baseline_year_1_arm_1'] <- 0
+IQ_adhd$time[IQ_adhd$time=='2_year_follow_up_y_arm_1'] <- 2
+IQ_adhd_wide <- reshape(IQ_adhd, idvar = "ID", timevar = "time", direction = "wide") 
+
+# SES
+setwd("/Users/adamkaminski/Desktop/stimproj/data/nda_downloads/")
+demos <- read.csv("demographics.csv",header=TRUE)
 
 # plot FC change
 # Left Putamen - Frontoparietal Network
@@ -226,8 +247,10 @@ mean(netdat_TD_orig_cxs_long_2$rsfmri_cor_ngd_vs_scs_ptrh)
 # Get original resting state data to compare
 setwd("/Users/adamkaminski/Desktop/stimulant-exposure-ABCD")
 orig_dat <- read.csv('stimulant_master_df.csv')
-orig_dat_filitered <- orig_dat[,c(1,2,3,6,12,15,21,22,25,31,34,135)]
-colnames(orig_dat_filitered)[c(5,6,10,11,12)] <- c("fopa_ptlh.0","vs_ptrh.0","fopa_ptlh.2","vs_ptrh.2","group")
+orig_dat_filitered <- orig_dat[,c(1,2,3,6,12,15,21,22,25,31,34,56,59,66,69,135)]
+colnames(orig_dat_filitered)[c(12:15)] <- c("FD.under.2","meanFD.2","FD.under.0","meanFD.0")
+colnames(orig_dat_filitered)[c(5,6,10,11,16)] <- c("fopa_ptlh.0","vs_ptrh.0","fopa_ptlh.2","vs_ptrh.2","group")
+
 orig_dat_filitered$group[orig_dat_filitered$group==0] <- 'ADHD_naive'
 orig_dat_filitered$group[orig_dat_filitered$group==1] <- 'ADHD_stimulant'
 
@@ -237,29 +260,74 @@ orig_dat_filitered_long <- orig_dat_filitered %>%
                names_to = c(".value", "time"), 
                names_pattern = "(.*?)\\.(\\d+)$")
 
+#
+#
 # compare TD, ADHD stimulant-exposed, and ADHD naive
-netdat_TD_orig_cxs_long_filtered <- netdat_TD_orig_cxs_long[,c(1,2,3,4,12,13,14)]
-netdat_TD_orig_cxs_long_filtered$group <- 'TD'
-netdat_TD_orig_cxs_long_filtered <- netdat_TD_orig_cxs_long_filtered %>%
-  select(ID, group, time, age, sex, ADHD.Problems, everything())
+#
+#
+
+# get desired variables from TD dataset
+netdat_TD_orig_cxs_long_filtered <- netdat_TD_orig_cxs_long[,c(1,2,3,4,8,11,12,13,14)]
+colnames(netdat_TD_orig_cxs_long_filtered)[c(5,6)] <- c("FD.under","meanFD")
 colnames(netdat_TD_orig_cxs_long_filtered)[c(7,8)] <- c("fopa_ptlh","vs_ptrh")
-combined_df <- rbind(orig_dat_filitered_long,netdat_TD_orig_cxs_long_filtered)
+netdat_TD_orig_cxs_long_filtered$group <- 'TD'
+
+# rearrange columns
+netdat_TD_orig_cxs_long_filtered <- netdat_TD_orig_cxs_long_filtered %>%
+  select(ID, group, time, age, sex, ADHD.Problems, fopa_ptlh, vs_ptrh, everything())
+
+# simplify df names
+TD_dat <- netdat_TD_orig_cxs_long_filtered
+ADHD_dat <- orig_dat_filitered_long
+
+# add covariate columns 
+IQ_TD <- IQ_TD[order(IQ_TD$ID),]
+if (all(TD_dat$ID == IQ_TD$ID)) {
+  TD_dat$IQ <- IQ_TD$iq
+}
+
+IQ_adhd <- IQ_adhd[order(IQ_adhd$ID),]
+if (all(ADHD_dat$ID == IQ_adhd$ID)) {
+  ADHD_dat$IQ <- IQ_adhd$iq
+}
+
+combined_df <- rbind(ADHD_dat,TD_dat)
+
+# test for group differences:
+
+# length of good data (sqrt)
+# combined_df$FD.under <- sqrt(combined_df$FD.under)
+
+t.test(combined_df$FD.under[combined_df$group=='TD'],combined_df$FD.under[combined_df$group=='ADHD_stimulant'],paired=FALSE)
+t.test(combined_df$FD.under[combined_df$group=='TD'],combined_df$FD.under[combined_df$group=='ADHD_naive'],paired=FALSE)
+
+# mean FD
+t.test(combined_df$meanFD[combined_df$group=='TD'],combined_df$meanFD[combined_df$group=='ADHD_stimulant'],paired=FALSE)
+t.test(combined_df$meanFD[combined_df$group=='TD'],combined_df$meanFD[combined_df$group=='ADHD_naive'],paired=FALSE)
+
+# sex
+chisq.test(combined_df$sex[combined_df$group!='ADHD_naive'],combined_df$group[combined_df$group!='ADHD_naive'])
+chisq.test(combined_df$sex[combined_df$group!='ADHD_stimulant'],combined_df$group[combined_df$group!='ADHD_stimulant'])
+
+# IQ
+t.test(combined_df$IQ[combined_df$group=='TD'],combined_df$IQ[combined_df$group=='ADHD_stimulant'],paired=FALSE)
+t.test(combined_df$IQ[combined_df$group=='TD'],combined_df$IQ[combined_df$group=='ADHD_naive'],paired=FALSE)
 
 # ANOVAs (3x2)
-anova_result <- aov(fopa_ptlh ~ time * group + sex + ADHD.Problems, data = combined_df)
+anova_result <- aov(fopa_ptlh ~ time * group + sex + ADHD.Problems + IQ + meanFD + FD.under, data = combined_df)
 summary(anova_result)
 
-anova_result <- aov(vs_ptrh ~ time * group + sex + ADHD.Problems, data = combined_df)
+anova_result <- aov(vs_ptrh ~ time * group + sex + ADHD.Problems + IQ + meanFD + FD.under, data = combined_df)
 summary(anova_result)
 
 # ANOVAs (2x2)
 # no naive
 combined_df_no_naive <- combined_df[combined_df$group!="ADHD_naive",]
 
-anova_result <- aov(fopa_ptlh ~ time * group + sex + ADHD.Problems, data = combined_df_no_naive)
+anova_result <- aov(fopa_ptlh ~ time * group + sex + ADHD.Problems + FD.under, data = combined_df_no_naive)
 summary(anova_result)
 
-anova_result <- aov(vs_ptrh ~ time * group + sex + ADHD.Problems, data = combined_df_no_naive)
+anova_result <- aov(vs_ptrh ~ time * group + sex + ADHD.Problems + FD.under, data = combined_df_no_naive)
 summary(anova_result)
 
 # plot results
@@ -268,8 +336,10 @@ ggplot(combined_df_no_naive, aes(x = time, y = fopa_ptlh, color = group)) +
   geom_boxplot(alpha = 0.5) +  
   geom_line() +
   geom_line(aes(group = group, y = fopa_ptlh), stat = "summary", size = 0.5, linetype="dashed") +
-  labs(x = "Time", y = "rs-FC", color = "Group") +
-  ggtitle("Frontoparietal - Left Putamen") +
+  scale_color_manual(values=c("red", "darkblue"), labels = c("ADHD\nStimulant Exposed","Healthy Control")) +
+  labs(x = "Time", y = "Resting State Functional Connectivity", color = "Group") +
+  scale_x_discrete(labels = c("Baseline","Year 2")) +
+  ggtitle("Left Putamen - Frontoparietal Network") +
   theme_minimal() 
 
 ggplot(combined_df_no_naive, aes(x = time, y = vs_ptrh, color = group)) +
@@ -277,17 +347,19 @@ ggplot(combined_df_no_naive, aes(x = time, y = vs_ptrh, color = group)) +
   geom_boxplot(alpha = 0.5) +  
   geom_line() +
   geom_line(aes(group = group, y = fopa_ptlh), stat = "summary", size = 0.5, linetype="dashed") +
-  labs(x = "Time", y = "rs-FC", color = "Group") +
-  ggtitle("Visual - Right Putamen") +
+  scale_color_manual(values=c("red", "darkblue"), labels = c("ADHD\nStimulant Exposed","Healthy Control")) +
+  labs(x = "Time", y = "Resting State Functional Connectivity", color = "Group") +
+  scale_x_discrete(labels = c("Baseline","Year 2")) +
+  ggtitle("Left Putamen - Visual Network") +
   theme_minimal() 
 
 # no stim
 combined_df_no_stim <- combined_df[combined_df$group!="ADHD_stimulant",]
 
-anova_result <- aov(fopa_ptlh ~ time * group + sex + ADHD.Problems, data = combined_df_no_stim)
+anova_result <- aov(fopa_ptlh ~ time * group + sex + ADHD.Problems + FD.under + meanFD + IQ, data = combined_df_no_stim)
 summary(anova_result)
 
-anova_result <- aov(vs_ptrh ~ time * group + sex + ADHD.Problems, data = combined_df_no_stim)
+anova_result <- aov(vs_ptrh ~ time * group + sex + ADHD.Problems + FD.under + meanFD + IQ, data = combined_df_no_stim)
 summary(anova_result)
 
 # plot results
@@ -296,8 +368,10 @@ ggplot(combined_df_no_stim, aes(x = time, y = fopa_ptlh, color = group)) +
   geom_boxplot(alpha = 0.5) +  
   geom_line() +
   geom_line(aes(group = group, y = fopa_ptlh), stat = "summary", size = 0.5, linetype="dashed") +
-  labs(x = "Time", y = "rs-FC", color = "Group") +
-  ggtitle("Frontoparietal - Left Putamen") +
+  scale_color_manual(values=c("orange", "darkblue"), labels = c("ADHD\nStimulant Naive","Healthy Control")) +
+  labs(x = "Time", y = "Resting State Functional Connectivity", color = "Group") +
+  scale_x_discrete(labels = c("Baseline","Year 2")) +
+  ggtitle("Left Putamen - Frontoparietal Network") +
   theme_minimal() 
 
 ggplot(combined_df_no_stim, aes(x = time, y = vs_ptrh, color = group)) +
@@ -305,8 +379,10 @@ ggplot(combined_df_no_stim, aes(x = time, y = vs_ptrh, color = group)) +
   geom_boxplot(alpha = 0.5) +  
   geom_line() +
   geom_line(aes(group = group, y = fopa_ptlh), stat = "summary", size = 0.5, linetype="dashed") +
-  labs(x = "Time", y = "rs-FC", color = "Group") +
-  ggtitle("Visual - Right Putamen") +
+  scale_color_manual(values=c("orange", "darkblue"), labels = c("ADHD\nStimulant Naive","Healthy Control")) +
+  labs(x = "Time", y = "Resting State Functional Connectivity", color = "Group") +
+  scale_x_discrete(labels = c("Baseline","Year 2")) +
+  ggtitle("Left Putamen - Visual Network") +
   theme_minimal() 
 
 # t-tests
