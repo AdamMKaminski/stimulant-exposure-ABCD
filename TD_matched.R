@@ -1,5 +1,8 @@
 
-
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(cowplot)
 
 #
 # No KSADS diagnosis
@@ -14,30 +17,46 @@ ksads_filtered <- ksads[ksads$any==0,]
 filtered_ids <- ksads_filtered$The.NDAR.Global.Unique.Identifier..GUID..for.research.subject
 
 # cbcl
-setwd("/Users/adamkaminski/Desktop/stimproj/data/ABCD_data/")
+setwd("/Users/adamkaminski/Desktop/stimulant-exposure-ABCD")
 cbcl <- read.csv('abcd_cbcls01.csv')
-cbcl <- cbcl[cbcl$A.ID%in%filtered_ids,]
+cbcl <- cbcl[cbcl$ID%in%filtered_ids,]
+
+# remove unwanted cols
+cbcl <- cbcl %>%
+  select(-contains("..raw.score"))
+
+cbcl <- cbcl %>%
+  select(-contains("..missing.values"))
+
+cbcl <- cbcl %>%
+  select(-contains("..number.of.missing.values"))
+
+cbcl <- cbcl %>%
+  select(-contains("collection_title"))
+
+cbcl <- cbcl %>%
+  select(-contains("study_cohort_name"))
 
 # has data at baseline and Y2
-cbcl_baseline <- cbcl[cbcl$time=="0_baseline_year_1_arm_1",]
+cbcl_baseline <- cbcl[cbcl$time=="baseline_year_1_arm_1",]
 cbcl_1 <- cbcl[cbcl$time=="1_year_follow_up_y_arm_1",]
 cbcl_2 <- cbcl[cbcl$time=="2_year_follow_up_y_arm_1",]
 
-full_IDs <- cbcl_baseline$A.ID[cbcl_baseline$A.ID%in%cbcl_2$A.ID]
-cbcl <- cbcl[cbcl$A.ID%in%full_IDs,]
+full_IDs <- cbcl_baseline$ID[cbcl_baseline$ID%in%cbcl_2$ID]
+cbcl <- cbcl[cbcl$ID%in%full_IDs,]
 
 # clean up and reshape df
-cbcl$time[cbcl$time=="0_baseline_year_1_arm_1"] <- "0"
+cbcl$time[cbcl$time=="baseline_year_1_arm_1"] <- "0"
 cbcl$time[cbcl$time=="1_year_follow_up_y_arm_1"] <- "1"
 cbcl$time[cbcl$time=="2_year_follow_up_y_arm_1"] <- "2"
 cbcl <- cbcl[cbcl$time!="1",]
-cbcl_wide <- reshape(cbcl, idvar = "A.ID", timevar = "time", direction = "wide")
+cbcl_wide <- reshape(cbcl, idvar = "ID", timevar = "time", direction = "wide")
 
 # has below 60 on all DSM-oriented scales
 cbcl_wide$times_60_above <- 0
 
 for(col in colnames(cbcl_wide)) {
-  if(any(!(col %in% c("A.ID","age.2","sex.2","age.0","sex.0")))) {
+  if(any(!(col %in% c("ID","age.2","sex.2","age.0","sex.0")))) {
     cbcl_integer <- as.integer(cbcl_wide[[col]]>=60)
     cbcl_integer <- replace(cbcl_integer, is.na(cbcl_integer), 0)
     cbcl_wide$times_60_above <- cbcl_wide$times_60_above + cbcl_integer
@@ -48,24 +67,23 @@ cbcl_wide_filtered <- cbcl_wide[cbcl_wide$times_60_above==0,]
 
 # Remove overlapping IDs
 origin_IDs <- read.csv('original_analysis_IDs.csv')
-cbcl_wide_filtered2 <- cbcl_wide_filtered[!(cbcl_wide_filtered$A.ID%in%origin_IDs$x),]
+cbcl_wide_filtered2 <- cbcl_wide_filtered[!(cbcl_wide_filtered$ID%in%origin_IDs$x),]
 
 # Remove people with NOT recommended resting state data
-setwd("/Users/adamkaminski/Desktop/stimproj/data/ABCD_data/")
 imgincl <- read.csv('abcd_imgincl01_rsfmri.csv')
 imgincl <- imgincl[,-2:-3]
 imgincl <- reshape(imgincl, idvar = "ID", timevar = "time", direction = "wide")
 imgincl <- imgincl[imgincl$imgincl_rsfmri_include.0==1,]
 imgincl <- imgincl[imgincl$imgincl_rsfmri_include.2==1,]
 imgincl <- imgincl[complete.cases(imgincl), ]
-cbcl_wide_filtered3 <- cbcl_wide_filtered2[cbcl_wide_filtered2$A.ID%in%imgincl$ID,]
+cbcl_wide_filtered3 <- cbcl_wide_filtered2[cbcl_wide_filtered2$ID%in%imgincl$ID,]
 
 # Get imaging data
 setwd("/Users/adamkaminski/Downloads")
 netdat <- read.csv('mrirscor02_v1.csv')
 
 # filter based on included subjects up to this point
-netdat_filt <- netdat[netdat$ID%in%cbcl_wide_filtered3$A.ID,]
+netdat_filt <- netdat[netdat$ID%in%cbcl_wide_filtered3$ID,]
 
 # neaten time column
 netdat_filt$time[netdat_filt$time=="baseline_year_1_arm_1"] <- 0
@@ -155,6 +173,17 @@ netdat_TD_orig_cxs_long <- netdat_TD_orig_cxs %>%
                names_to = c(".value", "time"), 
                names_pattern = "(.*?)\\.(\\d+)$")
 
+# add other covariates
+# cbcl
+cbcl_filtered <- cbcl[cbcl$ID %in% netdat_TD_orig_cxs_long$ID,]
+
+cbcl_filtered <- cbcl_filtered[order(cbcl_filtered$ID),]
+netdat_TD_orig_cxs_long <- netdat_TD_orig_cxs_long[order(netdat_TD_orig_cxs_long$ID),]
+
+if (all(cbcl_filtered$ID == netdat_TD_orig_cxs_long$ID)) {
+  netdat_TD_orig_cxs_long$ADHD.Problems <- cbcl_filtered$ADHD.CBCL.DSM5.Scale..t.score.
+}
+
 # plot FC change
 # Left Putamen - Frontoparietal Network
 ggplot(netdat_TD_orig_cxs_long, aes(x=time, y=rsfmri_cor_ngd_fopa_scs_ptlh, color=time)) +
@@ -182,14 +211,117 @@ ggplot(netdat_TD_orig_cxs_long, aes(x=time, y=rsfmri_cor_ngd_vs_scs_ptrh, color=
   ggtitle("Right Putamen - Visual Network") +
   theme_minimal_grid(12)
 
-# t tests for rs-FC change
+# Paired t tests for rs-FC change
 netdat_TD_orig_cxs_long_0 <- netdat_TD_orig_cxs_long[netdat_TD_orig_cxs_long$time=="0",]
 netdat_TD_orig_cxs_long_2 <- netdat_TD_orig_cxs_long[netdat_TD_orig_cxs_long$time=="2",]
 
 t.test(netdat_TD_orig_cxs_long_0$rsfmri_cor_ngd_fopa_scs_ptlh,netdat_TD_orig_cxs_long_2$rsfmri_cor_ngd_fopa_scs_ptlh,paired=TRUE)
 t.test(netdat_TD_orig_cxs_long_0$rsfmri_cor_ngd_vs_scs_ptrh,netdat_TD_orig_cxs_long_2$rsfmri_cor_ngd_vs_scs_ptrh,paired=TRUE)
 
+mean(netdat_TD_orig_cxs_long_0$rsfmri_cor_ngd_fopa_scs_ptlh)
+mean(netdat_TD_orig_cxs_long_2$rsfmri_cor_ngd_fopa_scs_ptlh)
+mean(netdat_TD_orig_cxs_long_0$rsfmri_cor_ngd_vs_scs_ptrh)
+mean(netdat_TD_orig_cxs_long_2$rsfmri_cor_ngd_vs_scs_ptrh)
 
+# Get original resting state data to compare
+setwd("/Users/adamkaminski/Desktop/stimulant-exposure-ABCD")
+orig_dat <- read.csv('stimulant_master_df.csv')
+orig_dat_filitered <- orig_dat[,c(1,2,3,6,12,15,21,22,25,31,34,135)]
+colnames(orig_dat_filitered)[c(5,6,10,11,12)] <- c("fopa_ptlh.0","vs_ptrh.0","fopa_ptlh.2","vs_ptrh.2","group")
+orig_dat_filitered$group[orig_dat_filitered$group==0] <- 'ADHD_naive'
+orig_dat_filitered$group[orig_dat_filitered$group==1] <- 'ADHD_stimulant'
+
+# make long
+orig_dat_filitered_long <- orig_dat_filitered %>%
+  pivot_longer(cols = -c(ID,group), 
+               names_to = c(".value", "time"), 
+               names_pattern = "(.*?)\\.(\\d+)$")
+
+# compare TD, ADHD stimulant-exposed, and ADHD naive
+netdat_TD_orig_cxs_long_filtered <- netdat_TD_orig_cxs_long[,c(1,2,3,4,12,13,14)]
+netdat_TD_orig_cxs_long_filtered$group <- 'TD'
+netdat_TD_orig_cxs_long_filtered <- netdat_TD_orig_cxs_long_filtered %>%
+  select(ID, group, time, age, sex, ADHD.Problems, everything())
+colnames(netdat_TD_orig_cxs_long_filtered)[c(7,8)] <- c("fopa_ptlh","vs_ptrh")
+combined_df <- rbind(orig_dat_filitered_long,netdat_TD_orig_cxs_long_filtered)
+
+# ANOVAs (3x2)
+anova_result <- aov(fopa_ptlh ~ time * group + sex + ADHD.Problems, data = combined_df)
+summary(anova_result)
+
+anova_result <- aov(vs_ptrh ~ time * group + sex + ADHD.Problems, data = combined_df)
+summary(anova_result)
+
+# ANOVAs (2x2)
+# no naive
+combined_df_no_naive <- combined_df[combined_df$group!="ADHD_naive",]
+
+anova_result <- aov(fopa_ptlh ~ time * group + sex + ADHD.Problems, data = combined_df_no_naive)
+summary(anova_result)
+
+anova_result <- aov(vs_ptrh ~ time * group + sex + ADHD.Problems, data = combined_df_no_naive)
+summary(anova_result)
+
+# plot results
+ggplot(combined_df_no_naive, aes(x = time, y = fopa_ptlh, color = group)) +
+  geom_point(position = position_jitter(width = 0.2), size = 3, alpha = 0.7) +
+  geom_boxplot(alpha = 0.5) +  
+  geom_line() +
+  geom_line(aes(group = group, y = fopa_ptlh), stat = "summary", size = 0.5, linetype="dashed") +
+  labs(x = "Time", y = "rs-FC", color = "Group") +
+  ggtitle("Frontoparietal - Left Putamen") +
+  theme_minimal() 
+
+ggplot(combined_df_no_naive, aes(x = time, y = vs_ptrh, color = group)) +
+  geom_point(position = position_jitter(width = 0.2), size = 3, alpha = 0.7) +
+  geom_boxplot(alpha = 0.5) +  
+  geom_line() +
+  geom_line(aes(group = group, y = fopa_ptlh), stat = "summary", size = 0.5, linetype="dashed") +
+  labs(x = "Time", y = "rs-FC", color = "Group") +
+  ggtitle("Visual - Right Putamen") +
+  theme_minimal() 
+
+# no stim
+combined_df_no_stim <- combined_df[combined_df$group!="ADHD_stimulant",]
+
+anova_result <- aov(fopa_ptlh ~ time * group + sex + ADHD.Problems, data = combined_df_no_stim)
+summary(anova_result)
+
+anova_result <- aov(vs_ptrh ~ time * group + sex + ADHD.Problems, data = combined_df_no_stim)
+summary(anova_result)
+
+# plot results
+ggplot(combined_df_no_stim, aes(x = time, y = fopa_ptlh, color = group)) +
+  geom_point(position = position_jitter(width = 0.2), size = 3, alpha = 0.7) +
+  geom_boxplot(alpha = 0.5) +  
+  geom_line() +
+  geom_line(aes(group = group, y = fopa_ptlh), stat = "summary", size = 0.5, linetype="dashed") +
+  labs(x = "Time", y = "rs-FC", color = "Group") +
+  ggtitle("Frontoparietal - Left Putamen") +
+  theme_minimal() 
+
+ggplot(combined_df_no_stim, aes(x = time, y = vs_ptrh, color = group)) +
+  geom_point(position = position_jitter(width = 0.2), size = 3, alpha = 0.7) +
+  geom_boxplot(alpha = 0.5) +  
+  geom_line() +
+  geom_line(aes(group = group, y = fopa_ptlh), stat = "summary", size = 0.5, linetype="dashed") +
+  labs(x = "Time", y = "rs-FC", color = "Group") +
+  ggtitle("Visual - Right Putamen") +
+  theme_minimal() 
+
+# t-tests
+combined_df_0 <- combined_df[combined_df$time=="0",]
+combined_df_2 <- combined_df[combined_df$time=="2",]
+
+# for baseline
+t.test(combined_df_0$fopa_ptlh[combined_df_0$group=='TD'],combined_df_0$fopa_ptlh[combined_df_0$group=='ADHD_stimulant'],paired=FALSE)
+t.test(combined_df_0$fopa_ptlh[combined_df_0$group=='TD'],combined_df_0$fopa_ptlh[combined_df_0$group=='ADHD_naive'],paired=FALSE)
+t.test(combined_df_0$fopa_ptlh[combined_df_0$group=='ADHD_stimulant'],combined_df_0$fopa_ptlh[combined_df_0$group=='ADHD_naive'],paired=FALSE)
+
+# for Y2
+t.test(combined_df_2$fopa_ptlh[combined_df_2$group=='TD'],combined_df_2$fopa_ptlh[combined_df_2$group=='ADHD_stimulant'],paired=FALSE)
+t.test(combined_df_2$fopa_ptlh[combined_df_2$group=='TD'],combined_df_2$fopa_ptlh[combined_df_2$group=='ADHD_naive'],paired=FALSE)
+t.test(combined_df_2$fopa_ptlh[combined_df_2$group=='ADHD_stimulant'],combined_df_2$fopa_ptlh[combined_df_2$group=='ADHD_naive'],paired=FALSE)
 
 
 
