@@ -2,6 +2,7 @@
 require(tidyr)
 require(ggplot2)
 require(cowplot)
+require(dplyr)
 
 #
 #
@@ -124,8 +125,8 @@ make_long <- function(wide_dat) {
 cbcl_long_sorted_exp <- make_long(cbcl_wide_sorted_exp)
 
 # remove Y1 rows
-cbcl_long_no1 <- cbcl_long[cbcl_long$Time!="1",]
-cbcl_long_sorted_exp <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time!="1",]
+#cbcl_long_no1 <- cbcl_long[cbcl_long$Time!="1",]
+#cbcl_long_sorted_exp <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time!="1",]
 
 # Function for visualizing symptom change from baseline to Y2
 plot_symptom_change <- function(df,col,title,grouped) { 
@@ -181,8 +182,27 @@ ggplot(cbcl_long_sorted_exp, aes(x=interaction(as.factor(Time),as.factor(stim_ex
   scale_x_discrete(labels = c("Baseline","Y1","Y2","Baseline","Y1","Y2")) +
   theme(axis.text.x = element_blank(),axis.ticks.margin=unit(0,'cm')) +
   guides(color=guide_legend(title="Group")) + 
-  ggtitle("Change in ADHD Symptoms") + 
+  ggtitle("Change in ADHD Symptoms with More Lenient Inclusion") + 
   theme_minimal_grid(12)
+
+# supp material anova
+#cbcl_long_sorted_exp_no1 <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time!="1",]
+result <- aov(ADHD ~ stim_exposed*Time + Error(sub_id/Time), data = cbcl_long_sorted_exp)
+summary(result)
+
+cbcl_long_sorted_exp_0 <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time==0,]
+cbcl_long_sorted_exp_1 <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time==1,]
+cbcl_long_sorted_exp_2 <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time==2,]
+
+t.test(cbcl_long_sorted_exp_0$ADHD~cbcl_long_sorted_exp_0$stim_exposed,paired=FALSE)
+t.test(cbcl_long_sorted_exp_1$ADHD~cbcl_long_sorted_exp_1$stim_exposed,paired=FALSE)
+t.test(cbcl_long_sorted_exp_2$ADHD~cbcl_long_sorted_exp_2$stim_exposed,paired=FALSE)
+
+cbcl_long_sorted_exp_stim <- cbcl_long_sorted_exp_no1[cbcl_long_sorted_exp_no1$stim_exposed==1,]
+cbcl_long_sorted_exp_naive <- cbcl_long_sorted_exp_no1[cbcl_long_sorted_exp_no1$stim_exposed==0,]
+
+t.test(cbcl_long_sorted_exp_stim$ADHD~cbcl_long_sorted_exp_stim$Time,paired=TRUE)
+t.test(cbcl_long_sorted_exp_naive$ADHD~cbcl_long_sorted_exp_naive$Time,paired=TRUE)
 
 # ANOVAs
 result <- aov(Depress ~ stim_exposed*Time, data = cbcl_long_sorted_exp)
