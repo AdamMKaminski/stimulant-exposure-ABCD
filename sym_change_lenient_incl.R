@@ -240,7 +240,69 @@ cbcl_long_sorted_exp_2 <- cbcl_long_sorted_exp[cbcl_long_sorted_exp$Time=="2",]
 t.test(cbcl_long_sorted_exp_0$ADHD~cbcl_long_sorted_exp_0$stim_exposed)
 t.test(cbcl_long_sorted_exp_2$ADHD~cbcl_long_sorted_exp_2$stim_exposed)
 
+# Cohen's d
 
+#
+# Baseline
+#
 
+mean1 <- mean(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_0$stim_exposed==1])
+mean2 <- mean(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_0$stim_exposed==0])
+sd1 <- sd(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_0$stim_exposed==1])
+sd2 <- sd(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_0$stim_exposed==0])
+n1 <- length(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_0$stim_exposed==1])
+n2 <- length(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_0$stim_exposed==0])
 
+sp <- sqrt(((n1 - 1) * sd1^2 + (n2 - 1) * sd2^2) / (n1 + n2 - 2))
+
+cohens_d_baseline <- (mean1 - mean2) / sp
+
+#
+# Y2
+#
+
+mean1 <- mean(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==1])
+mean2 <- mean(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+sd1 <- sd(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==1])
+sd2 <- sd(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+n1 <- length(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==1])
+n2 <- length(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+
+sp <- sqrt(((n1 - 1) * sd1^2 + (n2 - 1) * sd2^2) / (n1 + n2 - 2))
+
+cohens_d_y2 <- (mean1 - mean2) / sp
+
+#
+# Paired
+#
+
+#
+# Stim
+#
+
+mean1 <- mean(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==1])
+mean2 <- mean(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_2$stim_exposed==1])
+sd1 <- sd(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==1])
+sd2 <- sd(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_2$stim_exposed==1])
+n1 <- length(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==1])
+n2 <- length(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_2$stim_exposed==1])
+
+sp <- sqrt(((n1 - 1) * sd1^2 + (n2 - 1) * sd2^2) / (n1 + n2 - 2))
+
+cohens_d_stim <- (mean1 - mean2) / sp
+
+#
+# No stim
+#
+
+mean1 <- mean(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+mean2 <- mean(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+sd1 <- sd(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+sd2 <- sd(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+n1 <- length(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+n2 <- length(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+
+sp <- sqrt(((n1 - 1) * sd1^2 + (n2 - 1) * sd2^2) / (n1 + n2 - 2))
+
+cohens_d_nostim <- (mean1 - mean2) / sp
 
