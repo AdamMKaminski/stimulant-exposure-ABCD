@@ -298,7 +298,7 @@ cohens_d_stim <- (mean1 - mean2) / sp
 mean1 <- mean(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
 mean2 <- mean(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
 sd1 <- sd(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
-sd2 <- sd(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
+sd2 <- sd(cbcl_long_sorted_exp_0$ADHD[cbcl_lon0g_sorted_exp_2$stim_exposed==0])
 n1 <- length(cbcl_long_sorted_exp_2$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
 n2 <- length(cbcl_long_sorted_exp_0$ADHD[cbcl_long_sorted_exp_2$stim_exposed==0])
 
